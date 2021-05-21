@@ -4,7 +4,7 @@ from django.contrib.admin.forms import AdminAuthenticationForm
 from django.contrib.auth import authenticate
 from django.contrib.auth.admin import UserAdmin
 
-from project.accounts.models import CustomUser
+from .models import CustomUser
 
 
 class OTPAdminAuthenticationForm(AdminAuthenticationForm):
