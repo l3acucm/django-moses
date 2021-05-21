@@ -8,9 +8,7 @@ from django.db import models
 from django.utils import timezone, translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-from django.conf.settings import DEBUG
-from django.conf import settings
-
+from moses.conf import settings
 
 
 class CustomUserManager(BaseUserManager):
@@ -86,7 +84,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     objects = CustomUserManager()
 
     def check_mfa_otp(self, otp):
-        if self.is_superuser and not DEBUG and not self.mfa_secret_key:
+        if self.is_superuser and not settings.DEBUG and not self.mfa_secret_key:
             return False
         elif not self.mfa_secret_key:
             return True
