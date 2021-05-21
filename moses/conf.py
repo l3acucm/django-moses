@@ -8,11 +8,6 @@ from moses import conf
 
 MOSES_SETTINGS_NAMESPACE = "MOSES"
 
-auth_module, user_model = django_settings.AUTH_USER_MODEL.rsplit(".", 1)
-
-User = apps.get_model(auth_module, user_model)
-
-
 class ObjDict(dict):
     def __getattribute__(self, item):
         try:
