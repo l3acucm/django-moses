@@ -36,4 +36,19 @@ Quick start
         ]
     }
 
+5. Specify Moses's serializers for Djoser::
+
+    DJOSER = {
+        'DOMAIN': DOMAIN,
+        'SITE_NAME': 'Fooder',
+        'PASSWORD_RESET_CONFIRM_URL': 'auth/resetPassword?uid={uid}&token={token}',
+        'ACTIVATION_URL': '?action=activation&uid={uid}&token={token}',
+        'SEND_ACTIVATION_EMAIL': False,
+        'SERIALIZERS': {
+            'user_create': 'moses.serializers.CustomUserCreateSerializer',
+            'current_user': 'moses.serializers.PrivateCustomUserSerializer',
+            'token_obtain': 'moses.serializers.TokenObtainSerializer'
+        }
+    }
+
 5. Run ``python manage.py migrate`` to create the accounts models.
