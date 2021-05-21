@@ -2,12 +2,12 @@ from django.urls import path
 
 from django.urls import include
 
-from project.accounts import views as accounts_views
+from . import views as accounts_views
 from rest_framework_simplejwt.views import (
     TokenRefreshView
 )
 
-from project.accounts.views import TokenObtainPairView, TokenVerifyView, ConfirmPhoneNumber, ConfirmEmail, \
+from .views import TokenObtainPairView, TokenVerifyView, ConfirmPhoneNumber, ConfirmEmail, \
     RequestPhoneNumberConfirmPin, RequestEmailConfirmPin
 
 app_name = 'accounts'

@@ -8,11 +8,9 @@ from django.db import models
 from django.utils import timezone, translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
+from django.conf.settings import DEBUG
+from django.conf import settings
 
-from project import settings
-from project.common import sms
-from project.common.languages import LANGUAGE_CHOICES
-from project.settings import DEBUG
 
 
 class CustomUserManager(BaseUserManager):
@@ -73,7 +71,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name=_("Is active"))
     is_staff = models.BooleanField(default=False, verbose_name=_("Is staff"))
 
-    preferred_language = models.PositiveSmallIntegerField(choices=LANGUAGE_CHOICES, default=1,
+    preferred_language = models.PositiveSmallIntegerField(choices=settings.MOSES['LANGUAGE_CHOICES'],
+                                                          default=settings.MOSES['DEFAULT_LANGUAGE'],
                                                           verbose_name=_("Preferred language"))
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
 
@@ -99,9 +98,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.phone_number_confirm_pin = random.randint(0, 999999)
         self.last_phone_number_confirm_pin_sent = timezone.now()
         self.save()
-        with translation.override(['en', 'ru'][self.preferred_language - 1]):
-            sms.send(self.phone_number,
-                     _("Phone number confirmation PIN: ") + str(self.phone_number_confirm_pin).zfill(6))
+        with translation.override(languages_list[self.preferred_language - 1]):
+            send_sms_handler(self.phone_number, _("Phone number confirmation PIN: ") + str(self.phone_number_confirm_pin).zfill(6))
 
     def send_phone_number_candidate_confirmation_sms(self, generate_new=False):
         if not self.phone_number_candidate:
@@ -110,8 +108,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.phone_number_candidate_confirm_pin = random.randint(0, 999999)
         self.last_phone_number_candidate_confirm_pin_sent = timezone.now()
         self.save()
-        with translation.override(['en', 'ru'][self.preferred_language - 1]):
-            sms.send(self.phone_number_candidate,
+        with translation.override(languages_list[self.preferred_language - 1]):
+            SEND_SMS_HANDLER(self.phone_number_candidate,
                      _("Phone number confirmation PIN: ") + str(self.phone_number_candidate_confirm_pin).zfill(6))
 
     def try_to_confirm_email(self, main_pin_str: str, candidate_pin_str: str):

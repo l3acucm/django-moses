@@ -13,9 +13,8 @@ from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from project.accounts.models import CustomUser
-from project.common.sms import validate_phone_number
-from project.settings import DEBUG
+from moses.models import CustomUser
+from moses.conf.settings import DEBUG, validate_phone_number
 
 
 class GroupSerializer(ModelSerializer):
