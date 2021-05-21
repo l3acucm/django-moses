@@ -22,6 +22,7 @@ Quick start
     AUTH_USER_MODEL = 'moses.CustomUser'
     
 3. Add MFAModelBackend as Authentication backend to process OTP on authentication::
+
     AUTHENTICATION_BACKENDS = [
         'moses.authentication.MFAModelBackend',
         ...
