@@ -51,4 +51,8 @@ Quick start
         }
     }
 
-5. Run ``python manage.py migrate`` to create the accounts models.
+5. Specify anonymous user constructor::
+
+    GUARDIAN_GET_INIT_ANONYMOUS_USER = 'moses.utils.get_init_anonymous_user_for_guardian'
+
+6. Run ``python manage.py migrate`` to create the accounts models.
