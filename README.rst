@@ -27,5 +27,13 @@ Quick start
         'moses.authentication.MFAModelBackend',
         ...
     ]
+4. Add JWTAuthentication to REST_FRAMEWORK's DEFAULT_AUTHENTICATION_CLASSES::
 
-4. Run ``python manage.py migrate`` to create the accounts models.
+    REST_FRAMEWORK = {
+        ...
+        'DEFAULT_AUTHENTICATION_CLASSES': [
+            'moses.authentication.JWTAuthentication',
+        ]
+    }
+
+5. Run ``python manage.py migrate`` to create the accounts models.
