@@ -22,9 +22,9 @@ from moses.models import CustomUser
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
     TokenObtainPairSerializer, PublicCustomUserSerializer
 
-from moses.conf.settings import URL_PREFIX, DOMAIN, SECRET_KEY
+from moses.conf import settings
 
-from moses.utils import languages_list, send_sms_handler
+LANGUAGES_LIST = [l[0] for l in settings.LANGUAGE_CHOICES]
 
 
 class ConfirmPhoneNumber(generics.GenericAPIView):
@@ -35,11 +35,11 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
         confirmation_result = request.user.try_to_confirm_phone_number(request.data['pin'],
                                                                        request.data.get('candidatePin', ''))
         if candidate_phone_number:
-            with translation.override(languages_list[request.user.preferred_language - 1]):
+            with translation.override(settings.LANGUAGES_LIST[request.user.preferred_language - 1]):
                 send_mail(_("Phone number changed"),
                           _(
                               "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                          'noreply@' + DOMAIN, [request.user.email])
+                          'noreply@' + settings.DOMAIN, [request.user.email])
         if confirmation_result:
             return Response({'result': 'ok'})
         return Response({'result': 'invalid pin'}, status.HTTP_400_BAD_REQUEST)
@@ -54,11 +54,11 @@ class ConfirmEmail(generics.GenericAPIView):
                                                                 request.data.get('candidatePin', ''))
         if confirmation_result:
             if candidate_email:
-                with translation.override(['en', 'ru'][request.user.preferred_language - 1]):
+                with translation.override(LANGUAGES_LIST[request.user.preferred_language - 1]):
                     send_mail(_("Email changed"),
                               _(
                                   "Your email has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                              'noreply@' + DOMAIN, [candidate_email])
+                              'noreply@' + settings.DOMAIN, [candidate_email])
             return Response({'result': 'ok'})
         return Response({'result': 'invalid pin'}, status.HTTP_400_BAD_REQUEST)
 
@@ -183,16 +183,16 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
         context = {'user': user}
         to = [get_user_email(user)]
         if user.is_email_confirmed:
-            with translation.override(['en', 'ru'][user.preferred_language - 1]):
+            with translation.override(LANGUAGES_LIST[user.preferred_language - 1]):
                 djoser_settings.EMAIL.password_reset(self.request, context).send(to)
         else:
             raise ValueError(_("Email is not confirmed"))
 
     def send_password_reset_sms(self, user):
-        url = URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
+        url = settings.URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
             token=default_token_generator.make_token(user),
             uid=encode_uid(user.pk))
-        send_sms_handler(to=user.phone_number, body=url)
+        settings.SEND_SMS_HANDLER(to=user.phone_number, body=url)
         user.last_password_reset_sms_sent_at = timezone.now()
         user.save()
 
@@ -211,11 +211,11 @@ class SetPasswordView(ActionViewMixin, generics.GenericAPIView):
     def _action(self, serializer):
         self.request.user.set_password(serializer.data['new_password'])
         self.request.user.save()
-        with translation.override(['en', 'ru'][self.request.user.preferred_language - 1]):
+        with translation.override(LANGUAGES_LIST[self.request.user.preferred_language - 1]):
             send_mail(_("Password changed"),
                       _(
                           "Your password has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                      'noreply@' + DOMAIN, [self.request.user.email])
+                      'noreply@' + settings.DOMAIN, [self.request.user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 

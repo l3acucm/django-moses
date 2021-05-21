@@ -10,7 +10,7 @@ from rest_framework_simplejwt.views import (
 from .views import TokenObtainPairView, TokenVerifyView, ConfirmPhoneNumber, ConfirmEmail, \
     RequestPhoneNumberConfirmPin, RequestEmailConfirmPin
 
-app_name = 'accounts'
+app_name = 'moses'
 
 urlpatterns = [
     path('token/obtain/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

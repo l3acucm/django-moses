@@ -4,7 +4,7 @@ from django.test.signals import setting_changed
 from django.utils.functional import LazyObject
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext as _
-from moses import conf
+
 
 MOSES_SETTINGS_NAMESPACE = "MOSES"
 
@@ -23,9 +23,9 @@ class ObjDict(dict):
         return val
 
 
-languages_list = [l[0] for l in conf.settings.LANGUAGE_CHOICE]
-send_sms_handler = conf.settings.SEND_SMS_HANDLER
+
 default_settings = {
+    "PHONE_NUMBER_VALIDATOR": None,
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "LANGUAGE_CHOICES": (
@@ -33,7 +33,7 @@ default_settings = {
     ),
 }
 
-SETTINGS_TO_IMPORT = ["TOKEN_MODEL", "SEND_SMS_HANDLER"]
+SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR"]
 
 
 class Settings:

@@ -14,7 +14,8 @@ from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from moses.models import CustomUser
-from moses.conf.settings import DEBUG, validate_phone_number
+from django.conf import settings
+from moses.conf import settings as moses_settings
 
 
 class GroupSerializer(ModelSerializer):
@@ -87,7 +88,7 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
         return len(obj.mfa_secret_key) > 0
 
     def validate(self, attrs):
-        if 'phone_number' in attrs and not validate_phone_number(attrs['phone_number']):
+        if 'phone_number' in attrs and not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
             raise serializers.ValidationError({
                 'phone_number': _('Incorrect phone number')
             })
@@ -180,7 +181,7 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        if not validate_phone_number(attrs['phone_number']):
+        if not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
             raise serializers.ValidationError({
                 'phone_number': _('Incorrect phone number')
             })

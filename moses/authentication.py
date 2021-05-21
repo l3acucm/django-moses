@@ -9,8 +9,8 @@ from rest_framework_simplejwt.exceptions import AuthenticationFailed, TokenError
 from rest_framework_simplejwt.models import TokenUser
 from rest_framework_simplejwt.settings import api_settings
 
-from project.accounts.models import CustomUser
-from project.settings import DEBUG
+from moses.models import CustomUser
+from django.conf import settings
 
 AUTH_HEADER_TYPES = api_settings.AUTH_HEADER_TYPES
 
@@ -160,7 +160,7 @@ class MFAModelBackend:
                 "username": username,
                 "success": success
             }
-            if not DEBUG:
+            if not settings.DEBUG:
                 logger = logging.getLogger('kibana')
                 logger.info("LOGIN", extra=extra_fields)
             if success:
