@@ -38,17 +38,16 @@ Quick start
 
 5. Specify Moses's serializers for Djoser::
 
-    DJOSER = {
-        'DOMAIN': DOMAIN,
-        'SITE_NAME': 'Fooder',
-        'PASSWORD_RESET_CONFIRM_URL': 'auth/resetPassword?uid={uid}&token={token}',
-        'ACTIVATION_URL': '?action=activation&uid={uid}&token={token}',
-        'SEND_ACTIVATION_EMAIL': False,
-        'SERIALIZERS': {
-            'user_create': 'moses.serializers.CustomUserCreateSerializer',
-            'current_user': 'moses.serializers.PrivateCustomUserSerializer',
-            'token_obtain': 'moses.serializers.TokenObtainSerializer'
-        }
+    MOSES = {
+    "DEFAULT_LANGUAGE": 1,
+    "SEND_SMS_HANDLER": "polls.sms.send", # def send(phone_number, body) -> success: bool
+    "PHONE_NUMBER_VALIDATOR": "polls.validate_phone_number", #  # def validate_phone_number(phone_number) -> is_valid: bool
+    "DOMAIN": DOMAIN,
+    "LANGUAGE_CHOICES": (
+            ('en', _("English")),
+            ('ru', _("Russian")),
+            ('kg', _("Kyrgyz")),
+        ),
     }
 
 6. Run ``python manage.py migrate`` to create the accounts models.
