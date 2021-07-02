@@ -9,9 +9,8 @@ from django.utils import timezone, translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
-from moses.conf import settings
-
-LANGUAGES_LIST = [l[0] for l in settings.LANGUAGE_CHOICES]
+from moses.conf import settings as moses_settings
+from django.conf import settings as django_settings
 
 
 class CustomUserManager(BaseUserManager):
@@ -72,8 +71,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name=_("Is active"))
     is_staff = models.BooleanField(default=False, verbose_name=_("Is staff"))
 
-    preferred_language = models.CharField(choices=settings.LANGUAGE_CHOICES,
-                                          default=settings.DEFAULT_LANGUAGE,
+    preferred_language = models.CharField(choices=moses_settings.LANGUAGE_CHOICES,
+                                          default=moses_settings.DEFAULT_LANGUAGE,
                                           max_length=10,
                                           verbose_name=_("Preferred language"))
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
@@ -88,7 +87,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     objects = CustomUserManager()
 
     def check_mfa_otp(self, otp):
-        if self.is_superuser and not settings.DEBUG and not self.mfa_secret_key:
+        if self.is_superuser and not django_settings.DEBUG and not self.mfa_secret_key:
             return False
         elif not self.mfa_secret_key:
             return True
@@ -100,9 +99,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.phone_number_confirm_pin = random.randint(0, 999999)
         self.last_phone_number_confirm_pin_sent = timezone.now()
         self.save()
-        with translation.override(LANGUAGES_LIST[self.preferred_language - 1]):
-            settings.SEND_SMS_HANDLER(self.phone_number,
-                             _("Phone number confirmation PIN: ") + str(self.phone_number_confirm_pin).zfill(6))
+        with translation.override(self.preferred_language):
+            moses_settings.SEND_SMS_HANDLER(self.phone_number,
+                                            _("Phone number confirmation PIN: ") + str(
+                                                self.phone_number_confirm_pin).zfill(6))
 
     def send_phone_number_candidate_confirmation_sms(self, generate_new=False):
         if not self.phone_number_candidate:
@@ -111,10 +111,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.phone_number_candidate_confirm_pin = random.randint(0, 999999)
         self.last_phone_number_candidate_confirm_pin_sent = timezone.now()
         self.save()
-        with translation.override(LANGUAGES_LIST[self.preferred_language - 1]):
-            SEND_SMS_HANDLER(self.phone_number_candidate,
-                             _("Phone number confirmation PIN: ") + str(self.phone_number_candidate_confirm_pin).zfill(
-                                 6))
+        with translation.override(self.preferred_language):
+            moses_settings.SEND_SMS_HANDLER(self.phone_number_candidate,
+                                            _("Phone number confirmation PIN: ") + str(
+                                                self.phone_number_candidate_confirm_pin).zfill(
+                                                6))
 
     def try_to_confirm_email(self, main_pin_str: str, candidate_pin_str: str):
         if self.email_confirm_attempts > 4:
@@ -165,14 +166,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         if generate_new or self.email_confirm_pin == 0:
             self.email_confirm_pin = random.randint(0, 999999)
             self.save()
-        with translation.override(LANGUAGES_LIST[self.preferred_language - 1]):
+        with translation.override(self.preferred_language):
             send_mail(_("Email confirmation PIN"), _("Your email confirmation PIN is: ") + str(self.email_confirm_pin),
-                      'noreply@' + settings.DOMAIN, [self.email])
+                      'noreply@' + django_settings.DOMAIN, [self.email])
 
     def send_payeer_wallet_changed_email(self):
-        with translation.override(LANGUAGES_LIST[self.preferred_language - 1]):
+        with translation.override(self.preferred_language):
             send_mail(_("Payeer wallet has been updated"), _("Your payeer wallet has been updated "),
-                      'noreply@' + settings.DOMAIN, [self.email])
+                      'noreply@' + django_settings.DOMAIN, [self.email])
 
     def send_email_candidate_confirmation_email(self, generate_new=False):
         if not self.email_candidate:
@@ -180,10 +181,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         if generate_new or self.email_candidate_confirm_pin == 0:
             self.email_candidate_confirm_pin = random.randint(0, 999999)
             self.save()
-        with translation.override(LANGUAGES_LIST[self.preferred_language - 1]):
+        with translation.override(self.preferred_language):
             send_mail(_("Email confirmation PIN"),
                       _("Your email confirmation PIN is: ") + str(self.email_candidate_confirm_pin),
-                      'noreply@' + settings.DOMAIN, [self.email_candidate])
+                      'noreply@' + django_settings.DOMAIN, [self.email_candidate])
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'

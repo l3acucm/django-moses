@@ -1,4 +1,3 @@
-from django.apps import apps
 from django.conf import settings as django_settings
 from django.test.signals import setting_changed
 from django.utils.functional import LazyObject
@@ -7,6 +6,7 @@ from django.utils.translation import gettext as _
 
 
 MOSES_SETTINGS_NAMESPACE = "MOSES"
+
 
 class ObjDict(dict):
     def __getattribute__(self, item):
@@ -21,7 +21,6 @@ class ObjDict(dict):
             val = super(ObjDict, self).__getattribute__(item)
 
         return val
-
 
 
 default_settings = {

@@ -14,7 +14,7 @@ Quick start
         'moses',
     ]
 
-2. Set Moses's CustomUser model as AUTH_USER_MODEL::
+2. Set moses's CustomUser model as AUTH_USER_MODEL::
 
     AUTH_USER_MODEL = 'moses.CustomUser'
     
@@ -24,7 +24,7 @@ Quick start
         'moses.authentication.MFAModelBackend',
         ...
     ]
-    
+
 4. Add JWTAuthentication to REST_FRAMEWORK's DEFAULT_AUTHENTICATION_CLASSES::
 
     REST_FRAMEWORK = {
@@ -36,16 +36,15 @@ Quick start
 
 5. Specify Moses's serializers for Djoser::
 
-    MOSES = {
-    "DEFAULT_LANGUAGE": 1,
-    "SEND_SMS_HANDLER": "polls.sms.send", # def send(phone_number, body) -> success: bool
-    "PHONE_NUMBER_VALIDATOR": "polls.validate_phone_number", #  # def validate_phone_number(phone_number) -> is_valid: bool
+
+MOSES = {
+    "DEFAULT_LANGUAGE": 'en',
+    "SEND_SMS_HANDLER": "project.common.sms.send",
+    "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
     "DOMAIN": DOMAIN,
     "LANGUAGE_CHOICES": (
-            ('en', _("English")),
-            ('ru', _("Russian")),
-            ('kg', _("Kyrgyz")),
-        ),
-    }
+        ('en', _("English")),
+    ),
+}
 
 6. Run ``python manage.py migrate`` to create the accounts models.
