@@ -12,6 +12,8 @@ Quick start
     INSTALLED_APPS = [
         ...
         'moses',
+        'django.contrib.admin',
+        ...
     ]
 
 2. Set moses's CustomUser model as AUTH_USER_MODEL::
