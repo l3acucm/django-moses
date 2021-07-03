@@ -230,7 +230,7 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
             self.username_field: attrs[self.username_field],
             'password': attrs['password'],
             'otp': attrs.get('otp'),
-            'ip': self.context['request'].META['HTTP_CF_CONNECTING_IP'] if not DEBUG else None
+            'ip': self.context['request'].META['HTTP_CF_CONNECTING_IP'] if not settings.DEBUG else None
         }
         try:
             authenticate_kwargs['request'] = self.context['request']
