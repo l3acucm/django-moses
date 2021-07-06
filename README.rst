@@ -39,14 +39,14 @@ Quick start
 5. Specify Moses's serializers for Djoser::
 
 
-MOSES = {
-    "DEFAULT_LANGUAGE": 'en',
-    "SEND_SMS_HANDLER": "project.common.sms.send",
-    "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
-    "DOMAIN": DOMAIN,
-    "LANGUAGE_CHOICES": (
-        ('en', _("English")),
-    ),
-}
+    MOSES = {
+        "DEFAULT_LANGUAGE": 'en',
+        "SEND_SMS_HANDLER": "project.common.sms.send",
+        "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
+        "DOMAIN": DOMAIN,
+        "LANGUAGE_CHOICES": (
+            ('en', _("English")),
+        ),
+    }
 
 6. Run ``python manage.py migrate`` to create the accounts models.
