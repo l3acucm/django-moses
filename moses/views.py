@@ -92,7 +92,7 @@ class CheckIsMFAEnabled(generics.GenericAPIView):
 
     def get(self, request):
         u_qs = CustomUser.objects.filter(phone_number=self.request.GET.get('phone_number'))
-        result = u_qs.exists() and u_qs.first().mfa_secret_key
+        result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
         return Response({'result': result}, status=status.HTTP_200_OK)
 
 
