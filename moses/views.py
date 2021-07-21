@@ -160,7 +160,7 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
                 else:
                     return Response({'error': _("Can't use unactivated phone number or SMS was sent in 24 hours")},
                                     status=status.HTTP_400_BAD_REQUEST)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({}, status=status.HTTP_204_NO_CONTENT)
 
     def get_users_by_email(self, email):
         if self._users is None:
