@@ -44,6 +44,7 @@ Quick start
         "SEND_SMS_HANDLER": "project.common.sms.send",
         "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
         "DOMAIN": DOMAIN,
+        "URL_PREFIX": "http://localhost:8000", # without trailing slash
         "LANGUAGE_CHOICES": (
             ('en', _("English")),
         ),
