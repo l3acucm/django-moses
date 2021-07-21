@@ -183,7 +183,7 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
         context = {'user': user}
         to = [get_user_email(user)]
         if user.is_email_confirmed:
-            with translation.override(LANGUAGES_LIST[user.preferred_language - 1]):
+            with translation.override(user.preferred_language):
                 djoser_settings.EMAIL.password_reset(self.request, context).send(to)
         else:
             raise ValueError(_("Email is not confirmed"))
