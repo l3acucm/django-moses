@@ -27,6 +27,7 @@ default_settings = {
     "PHONE_NUMBER_VALIDATOR": None,
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
+    "URL_PREFIX": None,
     "LANGUAGE_CHOICES": (
         (1, _("English")),
     ),
