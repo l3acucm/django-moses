@@ -5,14 +5,14 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView
 )
 
-from .views import TokenObtainPairView, TokenVerifyView, ConfirmPhoneNumber, ConfirmEmail, \
+from .views import TokenObtainPairView, VerifyOTPView, ConfirmPhoneNumber, ConfirmEmail, \
     RequestPhoneNumberConfirmPin, RequestEmailConfirmPin
 
 app_name = 'moses'
 
 urlpatterns = [
     path('token/obtain/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/verify_mfa/', TokenVerifyView.as_view(), name='token_verify_pair'),
+    path('token/verify_otp/', VerifyOTPView.as_view(), name='token_verify_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('mfa/', accounts_views.MFAView.as_view(), name='mfa'),

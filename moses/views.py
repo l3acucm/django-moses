@@ -1,12 +1,8 @@
+from datetime import datetime
 import base64
 import random
 import string
 import pyotp
-
-from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenViewBase
 
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -16,6 +12,11 @@ from django.utils.translation import gettext as _
 from djoser.compat import get_user_email_field_name, get_user_email
 from djoser.utils import ActionViewMixin, logout_user, encode_uid
 from djoser.conf import settings as djoser_settings
+
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework_simplejwt.views import TokenViewBase
 
 from moses.models import CustomUser
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
@@ -67,6 +68,13 @@ class TokenObtainPairView(TokenViewBase):
 
     def get_serializer_context(self):
         return {'request': self.request}
+
+
+class VerifyOTPView(generics.GenericAPIView):
+    def post(self, request):
+        if request.user.verify_mfa_otp(request.data['mfa_otp']):
+            return Response({'mfa_token': {'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))}})
+        return Response({'error': 'invalid token'}, status.HTTP_400_BAD_REQUEST)
 
 
 class CheckEmailAvailability(generics.GenericAPIView):
