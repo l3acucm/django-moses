@@ -1,10 +1,13 @@
 import base64
 import random
 import string
-from datetime import datetime
-
-import jwt
 import pyotp
+
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework_simplejwt.views import TokenViewBase
+
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.utils import translation, timezone
@@ -12,10 +15,6 @@ from django.utils.timezone import now
 from django.utils.translation import gettext as _
 from djoser.compat import get_user_email_field_name, get_user_email
 from djoser.utils import ActionViewMixin, logout_user, encode_uid
-from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenViewBase
 from djoser.conf import settings as djoser_settings
 
 from moses.models import CustomUser
@@ -35,7 +34,7 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
         confirmation_result = request.user.try_to_confirm_phone_number(request.data['pin'],
                                                                        request.data.get('candidatePin', ''))
         if candidate_phone_number:
-            with translation.override(settings.LANGUAGES_LIST[request.user.preferred_language - 1]):
+            with translation.override(request.user.preferred_language):
                 send_mail(_("Phone number changed"),
                           _(
                               "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
@@ -54,7 +53,7 @@ class ConfirmEmail(generics.GenericAPIView):
                                                                 request.data.get('candidatePin', ''))
         if confirmation_result:
             if candidate_email:
-                with translation.override(LANGUAGES_LIST[request.user.preferred_language - 1]):
+                with translation.override(request.user.preferred_language):
                     send_mail(_("Email changed"),
                               _(
                                   "Your email has been changed. If it happened without your desire - contact us by email support@wts.guru."),
@@ -68,14 +67,6 @@ class TokenObtainPairView(TokenViewBase):
 
     def get_serializer_context(self):
         return {'request': self.request}
-
-
-class TokenVerifyView(generics.GenericAPIView):
-    def post(self, request):
-        if request.user.verify_mfa_otp(request.data['mfa_otp']):
-            return Response({'mfa_token': jwt.encode(
-                {'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))}, SECRET_KEY)})
-        return Response({'error': 'invalid token'}, status.HTTP_400_BAD_REQUEST)
 
 
 class CheckEmailAvailability(generics.GenericAPIView):
@@ -211,7 +202,7 @@ class SetPasswordView(ActionViewMixin, generics.GenericAPIView):
     def _action(self, serializer):
         self.request.user.set_password(serializer.data['new_password'])
         self.request.user.save()
-        with translation.override(LANGUAGES_LIST[self.request.user.preferred_language - 1]):
+        with translation.override(self.request.user.preferred_language):
             send_mail(_("Password changed"),
                       _(
                           "Your password has been changed. If it happened without your desire - contact us by email support@wts.guru."),
