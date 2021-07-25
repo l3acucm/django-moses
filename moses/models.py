@@ -62,6 +62,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_number_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_("Phone number confirm PIN"))
     phone_number_candidate_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_(
         "Phone number candidate confirm PIN"))
+    phone_number_confirm_attempts = models.PositiveSmallIntegerField(default=0, verbose_name=_("Phone number confirm attempts"))
     last_password_reset_sms_sent_at = models.DateTimeField(blank=True, null=True,
                                                            verbose_name=_("Last password reset sms sent at"))
 

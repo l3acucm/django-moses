@@ -7,8 +7,8 @@ from django.utils.translation import ugettext as _
 from djoser import constants
 from guardian.shortcuts import get_perms
 from rest_framework import serializers, exceptions
-from rest_framework.fields import SerializerMethodField
-from rest_framework.serializers import raise_errors_on_nested_writes, ModelSerializer
+from rest_framework.fields import SerializerMethodField, CharField
+from rest_framework.serializers import raise_errors_on_nested_writes, ModelSerializer, Serializer
 from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -16,6 +16,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from moses.models import CustomUser
 from django.conf import settings
 from moses.conf import settings as moses_settings
+
+
+class PinSerializer(Serializer):
+    pin = CharField()
+    candidate_pin = CharField(required=False)
 
 
 class GroupSerializer(ModelSerializer):

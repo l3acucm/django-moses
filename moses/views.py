@@ -20,7 +20,7 @@ from rest_framework_simplejwt.views import TokenViewBase
 
 from moses.models import CustomUser
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
-    TokenObtainPairSerializer, PublicCustomUserSerializer
+    TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer
 
 from moses.conf import settings
 
@@ -29,29 +29,31 @@ LANGUAGES_LIST = [l[0] for l in settings.LANGUAGE_CHOICES]
 
 class ConfirmPhoneNumber(generics.GenericAPIView):
     permission_classes = (IsAuthenticated,)
+    serializer_class = PinSerializer
 
     def post(self, request):
         candidate_phone_number = request.user.phone_number_candidate
         confirmation_result = request.user.try_to_confirm_phone_number(request.data['pin'],
-                                                                       request.data.get('candidatePin', ''))
+                                                                       request.data.get('candidate_pin', ''))
         if candidate_phone_number:
-            with translation.override(request.user.preferred_language):
-                send_mail(_("Phone number changed"),
-                          _(
-                              "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                          'noreply@' + settings.DOMAIN, [request.user.email])
-        if confirmation_result:
-            return Response({'result': 'ok'})
+            if confirmation_result:
+                with translation.override(request.user.preferred_language):
+                    send_mail(_("Phone number changed"),
+                              _(
+                                  "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
+                              'noreply@' + settings.DOMAIN, [request.user.email])
+                return Response({'result': 'ok'})
         return Response({'result': 'invalid pin'}, status.HTTP_400_BAD_REQUEST)
 
 
 class ConfirmEmail(generics.GenericAPIView):
     permission_classes = (IsAuthenticated,)
+    serializer_class = PinSerializer
 
     def post(self, request):
         candidate_email = request.user.email_candidate
         confirmation_result = request.user.try_to_confirm_email(request.data['pin'],
-                                                                request.data.get('candidatePin', ''))
+                                                                request.data.get('candidate_pin', ''))
         if confirmation_result:
             if candidate_email:
                 with translation.override(request.user.preferred_language):

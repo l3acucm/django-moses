@@ -43,11 +43,13 @@ class CustomUserAdmin(UserAdmin):
             'is_email_confirmed',
             'email_confirm_pin',
             'email_candidate_confirm_pin',
+            'email_confirm_attempts',
             'phone_number',
             'phone_number_candidate',
             'is_phone_number_confirmed',
             'phone_number_confirm_pin',
             'phone_number_candidate_confirm_pin',
+            'phone_number_confirm_attempts',
             'last_password_reset_sms_sent_at',
         )}),
         ('Access', {
