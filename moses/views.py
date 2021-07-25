@@ -20,7 +20,7 @@ from rest_framework_simplejwt.views import TokenViewBase
 
 from moses.models import CustomUser
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
-    TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer
+    TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer, MFASerializer
 
 from moses.conf import settings
 
@@ -43,7 +43,7 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
                                   "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
                               'noreply@' + settings.DOMAIN, [request.user.email])
                 return Response({'result': 'ok'})
-        return Response({'result': 'invalid pin'}, status.HTTP_400_BAD_REQUEST)
+        return Response({'result': 'Invalid pin'}, status.HTTP_400_BAD_REQUEST)
 
 
 class ConfirmEmail(generics.GenericAPIView):
@@ -62,7 +62,7 @@ class ConfirmEmail(generics.GenericAPIView):
                                   "Your email has been changed. If it happened without your desire - contact us by email support@wts.guru."),
                               'noreply@' + settings.DOMAIN, [candidate_email])
             return Response({'result': 'ok'})
-        return Response({'result': 'invalid pin'}, status.HTTP_400_BAD_REQUEST)
+        return Response({'result': 'Invalid pin'}, status.HTTP_400_BAD_REQUEST)
 
 
 class TokenObtainPairView(TokenViewBase):
@@ -98,15 +98,18 @@ class CheckIsMFAEnabled(generics.GenericAPIView):
 
 
 class MFAView(generics.GenericAPIView):
+    serializer_class = MFASerializer
+
     def post(self, request):
         if request.data['action'] == 'get_key':
             mfa_secret_key = base64.b32encode(
                 bytes(''.join(random.choice(string.ascii_letters) for _ in range(100)).encode('utf-8'))).decode('utf-8')
             return Response({'mfa_url': pyotp.totp.TOTP(mfa_secret_key.encode('utf-8'))
-                            .provisioning_uri(f"{request.user.first_name} {request.user.last_name}", "wts.guru"),
+                            .provisioning_uri(f"{request.user.first_name} {request.user.last_name}", "sunpay.kz"),
                              'mfa_secret_key': mfa_secret_key})
+
         elif not request.user.mfa_secret_key and request.data['action'] == 'enable':
-            mfa_secret_key = request.data.get('mfaSecretKey')
+            mfa_secret_key = request.data.get('mfa_secret_key')
             otp = request.data.get('otp')
             if pyotp.totp.TOTP(mfa_secret_key).verify(otp):
                 request.user.mfa_secret_key = mfa_secret_key

@@ -23,6 +23,12 @@ class PinSerializer(Serializer):
     candidate_pin = CharField(required=False)
 
 
+class MFASerializer(Serializer):
+    otp = CharField()
+    secret_key = CharField()
+    action = CharField(required=False)
+
+
 class GroupSerializer(ModelSerializer):
     class Meta:
         model = Group
