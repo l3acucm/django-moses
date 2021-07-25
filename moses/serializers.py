@@ -98,15 +98,16 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
         raise_errors_on_nested_writes('update', self, validated_data)
         info = model_meta.get_field_info(instance)
         if 'phone_number' in validated_data:
-            if validated_data['phone_number'] == instance.phone_number:
+            _phone_number = validated_data.pop('phone_number')
+            if _phone_number == instance.phone_number:
                 instance.phone_number_candidate = ''
                 instance.phone_number_confirm_pin = 0
                 instance.phone_number_candidate_confirm_pin = 0
                 instance.phone_number_confirm_attempts = 0
                 instance.save()
-            elif validated_data['phone_number'] != (instance.phone_number_candidate or instance.phone_number):
+            elif _phone_number != (instance.phone_number_candidate or instance.phone_number):
                 if instance.is_phone_number_confirmed:
-                    instance.phone_number_candidate = validated_data.pop('phone_number')
+                    instance.phone_number_candidate = _phone_number
                     instance.phone_number_confirm_attempts = 0
                     instance.save()
                     instance.send_phone_number_confirmation_sms(generate_new=True)
@@ -116,15 +117,16 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
                     instance.save()
                     instance.send_phone_number_confirmation_sms(generate_new=True)
         if 'email' in validated_data:
-            if validated_data['email'] == instance.email:
+            _email = validated_data.pop('email')
+            if _email == instance.email:
                 instance.email_candidate = ''
                 instance.email_confirm_pin = 0
                 instance.email_candidate_confirm_pin = 0
                 instance.email_confirm_attempts = 0
                 instance.save()
-            elif validated_data['email'] != (instance.email_candidate or instance.email):
+            elif _email != (instance.email_candidate or instance.email):
                 if instance.is_email_confirmed:
-                    instance.email_candidate = validated_data.pop('email')
+                    instance.email_candidate = _email
                     instance.email_confirm_attempts = 0
                     instance.save()
                     instance.send_email_confirmation_email(generate_new=True)
