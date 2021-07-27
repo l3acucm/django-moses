@@ -35,20 +35,6 @@ class GroupSerializer(ModelSerializer):
         fields = '__all__'
 
 
-class StaffSerializer(ModelSerializer):
-    groups = SerializerMethodField()
-
-    def get_groups(self, obj):
-        return GroupSerializer(obj.groups.filter(name__startswith=self.get_context()), many=True).data
-
-    def get_permissions(self, obj):
-        return get_perms(obj, self.context['method'])
-
-    class Meta:
-        model = CustomUser
-        fields = 'first_name', 'last_name', 'email', 'phone_number', 'permissions', 'id', 'groups'
-
-
 class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
     phone_number = serializers.CharField(required=False)
