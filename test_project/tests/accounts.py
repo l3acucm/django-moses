@@ -40,7 +40,7 @@ class RegisterTestCase(TestCase):
         self.request_phone_number_pin_view = RequestPhoneNumberConfirmPin.as_view()
 
     def test_correct_pin_codes_came_after_register(self):
-        self.assertEqual(2, 2)
+        self.assertEqual(2, 3)
         data = {
             'phone_number': '+996507030927',
             'first_name': 'Q2',
