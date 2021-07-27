@@ -5,9 +5,8 @@ from django.core import exceptions as django_exceptions
 from django.db import IntegrityError, transaction
 from django.utils.translation import ugettext as _
 from djoser import constants
-from guardian.shortcuts import get_perms
 from rest_framework import serializers, exceptions
-from rest_framework.fields import SerializerMethodField, CharField
+from rest_framework.fields import CharField
 from rest_framework.serializers import raise_errors_on_nested_writes, ModelSerializer, Serializer
 from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer

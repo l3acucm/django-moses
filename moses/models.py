@@ -169,12 +169,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.save()
         with translation.override(self.preferred_language):
             send_mail(_("Email confirmation PIN"), _("Your email confirmation PIN is: ") + str(self.email_confirm_pin),
-                      'noreply@' + django_settings.DOMAIN, [self.email])
+                      'noreply@' + moses_settings.DOMAIN, [self.email])
 
     def send_payeer_wallet_changed_email(self):
         with translation.override(self.preferred_language):
             send_mail(_("Payeer wallet has been updated"), _("Your payeer wallet has been updated "),
-                      'noreply@' + django_settings.DOMAIN, [self.email])
+                      'noreply@' + moses_settings.DOMAIN, [self.email])
 
     def send_email_candidate_confirmation_email(self, generate_new=False):
         if not self.email_candidate:

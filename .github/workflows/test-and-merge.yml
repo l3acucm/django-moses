@@ -1,0 +1,19 @@
+name: Test and merge
+on:
+  push:
+    branches:
+      - dev
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Test
+        run: pip install -r test_project/requirements.txt && pip install . && cd test_project && pytest
+      - name: Merge dev -> main
+        uses: devmasx/merge-branch@v1.3.1
+        with:
+          type: now
+          from_branch: dev
+          target_branch: main
+          github_token: ${{ github.token }}

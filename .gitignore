@@ -1,4 +1,6 @@
 .idea
+env
 build
 dist
 django_moses.egg-info
+__pycache__

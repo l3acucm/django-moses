@@ -1,0 +1,5 @@
+djoser
+django
+pytest-django
+factory-boy
+mock
