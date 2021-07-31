@@ -28,6 +28,7 @@ default_settings = {
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "URL_PREFIX": None,
+    "IP_HEADER": None,
     "LANGUAGE_CHOICES": (
         (1, _("English")),
     ),

@@ -28,6 +28,7 @@ MOSES = {
     "PHONE_NUMBER_VALIDATOR": "tests.mocks.validate_phone_number",
     "DOMAIN": "abc.xyz",
     "URL_PREFIX": "https://abc.xyz",
+    "IP_HEADER": "HTTP_CF_CONNECTING_IP" if DEBUG else None,
     "LANGUAGE_CHOICES": (
         ('en', "English"),
     ),
