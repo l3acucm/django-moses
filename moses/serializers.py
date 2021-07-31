@@ -13,7 +13,6 @@ from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from moses.models import CustomUser
-from django.conf import settings
 from moses.conf import settings as moses_settings
 
 
@@ -228,7 +227,7 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
             self.username_field: attrs[self.username_field],
             'password': attrs['password'],
             'otp': attrs.get('otp'),
-            'ip': self.context['request'].META['HTTP_CF_CONNECTING_IP'] if not settings.DEBUG else None
+            'ip': self.context['request'].META[moses_settings.IP_HEADER] if moses_settings.IP_HEADER else None
         }
         try:
             authenticate_kwargs['request'] = self.context['request']

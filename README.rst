@@ -45,6 +45,7 @@ Quick start
         "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
         "DOMAIN": DOMAIN,
         "URL_PREFIX": "http://localhost:8000", # without trailing slash
+        "IP_HEADER": "HTTP_CF_CONNECTING_IP" if DEBUG else None,
         "LANGUAGE_CHOICES": (
             ('en', _("English")),
         ),
