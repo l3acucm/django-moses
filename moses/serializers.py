@@ -3,7 +3,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
 from django.db import IntegrityError, transaction
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from djoser import constants
 from rest_framework import serializers, exceptions
 from rest_framework.fields import CharField
