@@ -108,6 +108,7 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
                     instance.send_phone_number_confirmation_sms(generate_new=True)
                     instance.send_phone_number_candidate_confirmation_sms(generate_new=True)
                 else:
+                    instance.phone_number = _phone_number
                     instance.phone_number_confirm_attempts = 0
                     instance.save()
                     instance.send_phone_number_confirmation_sms(generate_new=True)
@@ -127,6 +128,7 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
                     instance.send_email_confirmation_email(generate_new=True)
                     instance.send_email_candidate_confirmation_email(generate_new=True)
                 else:
+                    instance.email = _email
                     instance.email_confirm_attempts = 0
                     instance.save()
                     instance.send_email_confirmation_email(generate_new=True)
