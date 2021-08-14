@@ -1,7 +1,11 @@
+import base64
+import random
 import re
+import string
 from datetime import datetime, timedelta
 
 import factory
+import pyotp
 from factory.django import DjangoModelFactory
 
 from django.test import TestCase
@@ -10,7 +14,7 @@ from django.urls import reverse, resolve
 from rest_framework.test import force_authenticate, APIRequestFactory
 
 from moses.models import CustomUser
-from moses.views import ConfirmPhoneNumber, RequestEmailConfirmPin, RequestPhoneNumberConfirmPin
+from moses.views import ConfirmPhoneNumber, RequestEmailConfirmPin, RequestPhoneNumberConfirmPin, MFAView
 
 request_factory = APIRequestFactory()
 
@@ -38,6 +42,7 @@ class RegisterTestCase(TestCase):
         self.update_user_view = resolve(reverse('moses:customuser-me')).func
         self.request_email_pin_view = RequestEmailConfirmPin.as_view()
         self.request_phone_number_pin_view = RequestPhoneNumberConfirmPin.as_view()
+        self.mfa_view = MFAView.as_view()
 
     def test_correct_pin_codes_came_after_register(self):
         data = {
@@ -77,19 +82,19 @@ class RegisterTestCase(TestCase):
         request = request_factory.post(reverse('moses:confirm_phone_number'),
                                        {'pin': SENT_SMS['+996507030927'], 'candidate_pin': SENT_SMS['+996507030928']})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.confirm_phone_number_view(request)
+        self.confirm_phone_number_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030928')
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '')
 
         request = request_factory.patch(reverse('moses:customuser-me'), {'phone_number': '+996507030929'})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.update_user_view(request)
+        self.update_user_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030928')
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '+996507030929')
 
         request = request_factory.patch(reverse('moses:customuser-me'), {'phone_number': '+996507030930'})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.update_user_view(request)
+        self.update_user_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030928')
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '+996507030930')
 
@@ -97,7 +102,7 @@ class RegisterTestCase(TestCase):
                                        {'pin': SENT_SMS['+996507030928'][:-1],
                                         'candidate_pin': SENT_SMS['+996507030930']})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.confirm_phone_number_view(request)
+        self.confirm_phone_number_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030928')
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '+996507030930')
         self.assertTrue(CustomUser.objects.last().is_phone_number_confirmed)
@@ -105,14 +110,14 @@ class RegisterTestCase(TestCase):
         request = request_factory.post(reverse('moses:confirm_phone_number'),
                                        {'pin': SENT_SMS['+996507030928'], 'candidate_pin': SENT_SMS['+996507030930']})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.confirm_phone_number_view(request)
+        self.confirm_phone_number_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030930')
         self.assertTrue(CustomUser.objects.last().is_phone_number_confirmed)
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '')
 
         request = request_factory.patch(reverse('moses:customuser-me'), {'phone_number': '+996507030931'})
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.update_user_view(request)
+        self.update_user_view(request)
         self.assertEqual(CustomUser.objects.last().phone_number, '+996507030930')
         self.assertEqual(CustomUser.objects.last().phone_number_candidate, '+996507030931')
         self.assertTrue(CustomUser.objects.last().is_phone_number_confirmed)
@@ -124,7 +129,7 @@ class RegisterTestCase(TestCase):
         self.assertNotIn('+996507030931', SENT_SMS)
         request = request_factory.post(reverse('moses:request_phone_number_confirm_pin'))
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.request_phone_number_pin_view(request)
+        self.request_phone_number_pin_view(request)
         self.assertEqual((CustomUser.objects.last().phone_number_confirm_pin, request.user.phone_number_candidate_confirm_pin),
                          first_pins)
         self.assertNotIn('+996507030930', SENT_SMS)
@@ -135,8 +140,29 @@ class RegisterTestCase(TestCase):
 
         request = request_factory.post(reverse('moses:request_phone_number_confirm_pin'))
         force_authenticate(request, user=CustomUser.objects.last())
-        response = self.request_phone_number_pin_view(request)
-        self.assertEqual((CustomUser.objects.last().phone_number_confirm_pin, request.user.phone_number_candidate_confirm_pin),
-                         first_pins)
+        self.request_phone_number_pin_view(request)
+        self.assertEqual(
+            (CustomUser.objects.last().phone_number_confirm_pin, request.user.phone_number_candidate_confirm_pin),
+            first_pins)
         self.assertIn('+996507030930', SENT_SMS)
         self.assertIn('+996507030931', SENT_SMS)
+        random_key = base64.b32encode(
+                bytes(''.join(random.choice(string.ascii_letters) for _ in range(16)).encode('utf-8'))).decode('utf-8')
+        request = request_factory.post(reverse('moses:mfa'),
+                                        {'action': 'enable', 'mfa_secret_key': random_key, 'otp': pyotp.totp.TOTP(random_key.encode('utf-8')).now()})
+
+        force_authenticate(request, user=CustomUser.objects.last())
+        response = self.mfa_view(request)
+
+        self.assertEqual(response.status_code, 200)
+
+        request = request_factory.post(reverse('moses:mfa'), {'action': 'disable'})
+        force_authenticate(request, user=CustomUser.objects.last())
+        response = self.mfa_view(request)
+        self.assertEqual(response.status_code, 401)
+
+        request = request_factory.post(reverse('moses:mfa'), {'action': 'disable'})
+        request.META['HTTP_OTP'] = pyotp.totp.TOTP(random_key.encode('utf-8')).now()
+        force_authenticate(request, user=CustomUser.objects.last())
+        response = self.mfa_view(request)
+        self.assertEqual(response.status_code, 200)

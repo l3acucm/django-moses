@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenViewBase
 
+from moses.decorators import otp_required
 from moses.models import CustomUser
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
     TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer, MFASerializer
@@ -100,6 +101,7 @@ class CheckIsMFAEnabled(generics.GenericAPIView):
 class MFAView(generics.GenericAPIView):
     serializer_class = MFASerializer
 
+    @otp_required
     def post(self, request):
         if request.data['action'] == 'get_key':
             mfa_secret_key = base64.b32encode(
@@ -110,20 +112,17 @@ class MFAView(generics.GenericAPIView):
 
         elif not request.user.mfa_secret_key and request.data['action'] == 'enable':
             mfa_secret_key = request.data.get('mfa_secret_key')
-            otp = request.data.get('otp')
-            if pyotp.totp.TOTP(mfa_secret_key).verify(otp):
+            otp = request.data.get('otp', '')
+            if pyotp.totp.TOTP(mfa_secret_key.encode('utf-8')).verify(otp):
                 request.user.mfa_secret_key = mfa_secret_key
                 request.user.save()
                 return Response({'success': 'mfa has been successfully disabled'})
             return Response({'error': "invalid secret key or otp"}, status=status.HTTP_400_BAD_REQUEST)
 
         elif request.user.mfa_secret_key and request.data['action'] == 'disable':
-            if request.user.check_mfa_otp(request.data['otp']):
-                request.user.mfa_secret_key = ''
-                request.user.save()
-                return Response({'success': 'mfa has been successfully disabled'})
-            else:
-                return Response({'error': 'invalid 2FA code'}, status=status.HTTP_400_BAD_REQUEST)
+            request.user.mfa_secret_key = ''
+            request.user.save()
+            return Response({'success': 'mfa has been successfully disabled'})
 
 
 class ResetPassword(ActionViewMixin, generics.GenericAPIView):
