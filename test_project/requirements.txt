@@ -3,3 +3,4 @@ django
 pytest-django
 factory-boy
 mock
+pyotp
