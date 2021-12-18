@@ -3,6 +3,7 @@ import base64
 import random
 import string
 import pyotp
+from django.contrib.auth.models import Group
 
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -16,6 +17,7 @@ from djoser.conf import settings as djoser_settings
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import views
 from rest_framework_simplejwt.views import TokenViewBase
 
 from moses.decorators import otp_required
@@ -244,3 +246,9 @@ class RequestEmailConfirmPin(generics.GenericAPIView):
         request.user.send_email_confirmation_email()
         request.user.send_email_candidate_confirmation_email()
         return Response({})
+
+
+class GetUserRoles(views.APIView):
+    def get(self, request):
+        query_set = Group.objects.filter(user=request.user)
+        return Response(query_set.all().values())

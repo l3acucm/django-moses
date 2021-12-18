@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import TokenObtainPairView, VerifyOTPView, ConfirmPhoneNumber, ConfirmEmail, \
-    RequestPhoneNumberConfirmPin, RequestEmailConfirmPin
+    RequestPhoneNumberConfirmPin, RequestEmailConfirmPin, GetUserRoles
 
 app_name = 'moses'
 
@@ -32,5 +32,8 @@ urlpatterns = [
          name='check_is_mfa_enabled'),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    path('roles/', GetUserRoles.as_view(), name='user_roles'),
+
     path('', include('djoser.urls'))
 ]
