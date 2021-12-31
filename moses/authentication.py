@@ -2,7 +2,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 
 from rest_framework import HTTP_HEADER_ENCODING, authentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed, TokenError, InvalidToken
