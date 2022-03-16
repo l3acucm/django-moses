@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import TokenObtainPairView, VerifyOTPView, ConfirmPhoneNumber, ConfirmEmail, \
-    RequestPhoneNumberConfirmPin, RequestEmailConfirmPin, GetUserRoles
+    RequestPhoneNumberConfirmPin, RequestEmailConfirmPin, GetUserRoles, UserByPhoneOrEmail
 
 app_name = 'moses'
 
@@ -34,6 +34,8 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     path('roles/', GetUserRoles.as_view(), name='user_roles'),
+
+    path('get_by_phone_or_email/', UserByPhoneOrEmail.as_view(), name='get_by_phone_or_email'),
 
     path('', include('djoser.urls'))
 ]

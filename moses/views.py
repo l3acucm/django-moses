@@ -7,6 +7,7 @@ from django.contrib.auth.models import Group
 
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.db.models import Q
 from django.utils import translation, timezone
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
@@ -252,3 +253,15 @@ class GetUserRoles(views.APIView):
     def get(self, request):
         query_set = Group.objects.filter(user=request.user)
         return Response(query_set.all().values())
+
+
+class UserByPhoneOrEmail(generics.GenericAPIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request):
+        phone_or_email = request.GET.get('value', None)
+        user = CustomUser.objects.filter(Q(email=phone_or_email) | Q(phone_number=phone_or_email)).first()
+        if user:
+            return Response(ShortCustomUserSerializer(user).data)
+        else:
+            return Response({'error': "no user found"}, status=status.HTTP_404_NOT_FOUND)
