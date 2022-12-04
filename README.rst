@@ -50,12 +50,12 @@ Quick start
             ('en', _("English")),
         ),
     }
-6. Add to your root urls.py:
-```
-from moses.admin import OTPAdminAuthenticationForm
+6. Add to your root urls.py::
 
-admin.site.site_header = _('Admin Panel')
-admin.site.index_title = 'Welcome'
-admin.site.login_form = OTPAdminAuthenticationForm
-```
+    from moses.admin import OTPAdminAuthenticationForm
+
+    admin.site.site_header = _('Admin Panel')
+    admin.site.index_title = 'Welcome'
+    admin.site.login_form = OTPAdminAuthenticationForm
+
 7. Run ``python manage.py migrate`` to create the accounts models.
