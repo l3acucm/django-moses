@@ -35,7 +35,7 @@ urlpatterns = [
 
     path('roles/', GetUserRoles.as_view(), name='user_roles'),
 
-    path('get_by_phone_or_email/', UserByPhoneOrEmail.as_view(), name='get_by_phone_or_email'),
+    path('user_by_phone_or_email/', UserByPhoneOrEmail.as_view(), name='get_user_by_phone_or_email'),
 
     path('', include('djoser.urls'))
 ]
