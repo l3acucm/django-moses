@@ -3,17 +3,14 @@ import base64
 import random
 import string
 import pyotp
-from django.contrib.auth.models import Group
 
+from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import translation, timezone
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-from djoser.compat import get_user_email_field_name, get_user_email
-from djoser.utils import ActionViewMixin, logout_user, encode_uid
-from djoser.conf import settings as djoser_settings
 
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -21,12 +18,16 @@ from rest_framework.response import Response
 from rest_framework import views
 from rest_framework_simplejwt.views import TokenViewBase
 
+from djoser.compat import get_user_email_field_name, get_user_email
+from djoser.utils import ActionViewMixin, logout_user, encode_uid
+from djoser.conf import settings as djoser_settings
+
 from moses.decorators import otp_required
 from moses.models import CustomUser
+from moses.conf import settings
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
     TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer, MFASerializer
 
-from moses.conf import settings
 
 LANGUAGES_LIST = [l[0] for l in settings.LANGUAGE_CHOICES]
 
@@ -76,11 +77,11 @@ class TokenObtainPairView(TokenViewBase):
         return {'request': self.request}
 
 
-class VerifyOTPView(generics.GenericAPIView):
+class ValidateAuthView(generics.GenericAPIView):
     def post(self, request):
-        if request.user.verify_mfa_otp(request.data['mfa_otp']):
-            return Response({'mfa_token': {'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))}})
-        return Response({'error': 'invalid token'}, status.HTTP_400_BAD_REQUEST)
+        if request.user.is_authenticated and request.user.verify_mfa_otp(request.data.get('mfa_code')):
+            return Response({'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))})
+        return Response({}, status.HTTP_400_BAD_REQUEST)
 
 
 class CheckEmailAvailability(generics.GenericAPIView):
