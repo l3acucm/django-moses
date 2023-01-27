@@ -20,14 +20,20 @@ Quick start
 
     AUTH_USER_MODEL = 'moses.CustomUser'
     
-3. Add MFAModelBackend as Authentication backend to process OTP on authentication::
+3. Allow OTP header in django-cors-headers config::
+
+    CORS_ALLOW_HEADERS = list(default_headers) + [
+        "otp",
+    ]
+    
+4. Add MFAModelBackend as Authentication backend to process OTP on authentication::
 
     AUTHENTICATION_BACKENDS = [
         'moses.authentication.MFAModelBackend',
         ...
     ]
 
-4. Add JWTAuthentication to REST_FRAMEWORK's DEFAULT_AUTHENTICATION_CLASSES::
+5. Add JWTAuthentication to REST_FRAMEWORK's DEFAULT_AUTHENTICATION_CLASSES::
 
     REST_FRAMEWORK = {
         ...
@@ -36,7 +42,7 @@ Quick start
         ]
     }
 
-5. Specify Moses's serializers for Djoser::
+6. Specify Moses's serializers for Djoser::
 
 
     MOSES = {
@@ -50,7 +56,7 @@ Quick start
             ('en', _("English")),
         ),
     }
-6. Add to your root urls.py::
+7. Add to your root urls.py::
 
     from moses.admin import OTPAdminAuthenticationForm
 
@@ -58,4 +64,4 @@ Quick start
     admin.site.index_title = 'Welcome'
     admin.site.login_form = OTPAdminAuthenticationForm
 
-7. Run ``python manage.py migrate`` to create the accounts models.
+8. Run ``python manage.py migrate`` to create the accounts models.
