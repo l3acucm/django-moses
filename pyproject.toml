@@ -12,5 +12,5 @@ dependencies = [
     'pyotp'
 ]
 
-[tool.setuptools.packages.find]
-include = ['moses*']
+[tool.setuptools]
+packages = ['moses']
