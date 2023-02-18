@@ -8,7 +8,7 @@ version = "0.1.0"
 dependencies = [
     'django==4.2.a1',
     'djangorestframework-simplejwt',
-    'djoser @ git+https://github.com/sunscrapers/djoser.git@main',
+    'djoser @ git+https://github.com/sunscrapers/djoser.git@master',
     'pyotp'
 ]
 [tool.setuptools]
