@@ -11,5 +11,6 @@ dependencies = [
     'djoser',
     'pyotp'
 ]
+
 [tool.setuptools]
-packages = ["moses"]
+py-modules = ["moses"]
