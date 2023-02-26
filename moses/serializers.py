@@ -12,8 +12,8 @@ from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from moses.models import CustomUser
 from moses.conf import settings as moses_settings
+from moses.models import CustomUser
 
 
 class PinSerializer(Serializer):
@@ -160,6 +160,8 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
 
 
 class CustomUserCreateSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(validators=[])
+    email = serializers.CharField(validators=[])
     password = serializers.CharField(
         style={'input_type': 'password'},
         write_only=True
@@ -181,13 +183,11 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
-            raise serializers.ValidationError({
-                'phone_number': _('Incorrect phone number')
-            })
+            raise serializers.ValidationError('incorrect_phone_number')
         if 'email' not in attrs or CustomUser.objects.filter(email=attrs['email']).exists():
-            raise serializers.ValidationError({
-                'email': _('User with this email already exists')
-            })
+            raise serializers.ValidationError('email_already_exists')
+        if 'phone_number' not in attrs or CustomUser.objects.filter(phone_number=attrs['phone_number']).exists():
+            raise serializers.ValidationError('phone_number_already_exists')
         user_attrs = {k: v for k, v in attrs.items() if k != 'inviter_id'}
         user = CustomUser(**user_attrs)
         password = attrs.get('password')

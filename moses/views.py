@@ -1,9 +1,10 @@
-from datetime import datetime
 import base64
 import random
 import string
-import pyotp
+from datetime import datetime
 
+import pyotp
+from django.conf import settings
 from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -11,25 +12,22 @@ from django.db.models import Q
 from django.utils import translation, timezone
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-
+from djoser.compat import get_user_email_field_name, get_user_email
+from djoser.conf import settings as djoser_settings
+from djoser.utils import ActionViewMixin, logout_user, encode_uid
 from rest_framework import generics, status
+from rest_framework import views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import views
 from rest_framework_simplejwt.views import TokenViewBase
 
-from djoser.compat import get_user_email_field_name, get_user_email
-from djoser.utils import ActionViewMixin, logout_user, encode_uid
-from djoser.conf import settings as djoser_settings
-
+from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
 from moses.models import CustomUser
-from moses.conf import settings
 from moses.serializers import PasswordResetSerializer, ShortCustomUserSerializer, \
     TokenObtainPairSerializer, PublicCustomUserSerializer, PinSerializer, MFASerializer
 
-
-LANGUAGES_LIST = [l[0] for l in settings.LANGUAGE_CHOICES]
+LANGUAGES_LIST = [l[0] for l in moses_settings.LANGUAGE_CHOICES]
 
 
 class ConfirmPhoneNumber(generics.GenericAPIView):
@@ -38,8 +36,10 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
 
     def post(self, request):
         candidate_phone_number = request.user.phone_number_candidate
-        confirmation_result = request.user.try_to_confirm_phone_number(request.data['pin'],
-                                                                       request.data.get('candidate_pin', ''))
+        confirmation_result = request.user.try_to_confirm_phone_number(
+            request.data['pin'],
+            request.data.get('candidate_pin', '')
+        )
         if candidate_phone_number:
             if confirmation_result:
                 with translation.override(request.user.preferred_language):
@@ -48,7 +48,7 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
                                   "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
                               'noreply@' + settings.DOMAIN, [request.user.email])
                 return Response({'result': 'ok'})
-        return Response({'result': 'Invalid pin'}, status.HTTP_400_BAD_REQUEST)
+        return Response({'non_field_errors': ['invalid_pin']}, status.HTTP_400_BAD_REQUEST)
 
 
 class ConfirmEmail(generics.GenericAPIView):
@@ -67,7 +67,7 @@ class ConfirmEmail(generics.GenericAPIView):
                                   "Your email has been changed. If it happened without your desire - contact us by email support@wts.guru."),
                               'noreply@' + settings.DOMAIN, [candidate_email])
             return Response({'result': 'ok'})
-        return Response({'result': 'Invalid pin'}, status.HTTP_400_BAD_REQUEST)
+        return Response({'non_field_errors': ['invalid_pin']}, status.HTTP_400_BAD_REQUEST)
 
 
 class TokenObtainPairView(TokenViewBase):
@@ -79,9 +79,12 @@ class TokenObtainPairView(TokenViewBase):
 
 class ValidateAuthView(generics.GenericAPIView):
     def post(self, request):
-        if request.user.is_authenticated and request.user.verify_mfa_otp(request.data.get('mfa_code')):
-            return Response({'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))})
-        return Response({}, status.HTTP_400_BAD_REQUEST)
+        if request.user.is_authenticated:
+            if request.user.verify_mfa_otp(request.data.get('mfa_code')):
+                return Response({'user_id': request.user.id, 'verified_at': int(datetime.timestamp(now()))})
+            else:
+                return Response({'non_field_errors': ['invalid_otp']}, status.HTTP_400_BAD_REQUEST)
+        return Response({'non_field_errors': ['not_authenticated']}, status.HTTP_400_BAD_REQUEST)
 
 
 class CheckEmailAvailability(generics.GenericAPIView):
@@ -121,7 +124,7 @@ class MFAView(generics.GenericAPIView):
                 request.user.mfa_secret_key = mfa_secret_key
                 request.user.save()
                 return Response({'success': 'mfa has been successfully disabled'})
-            return Response({'error': "invalid secret key or otp"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'non_field_errors': ['invalid_otp']}, status=status.HTTP_400_BAD_REQUEST)
 
         elif request.user.mfa_secret_key and request.data['action'] == 'disable':
             request.user.mfa_secret_key = ''
@@ -145,13 +148,13 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
                         return Response({'error': str(e)},
                                         status=status.HTTP_400_BAD_REQUEST)
                 else:
-                    return Response({'error': _("Can't use unactivated email")},
+                    return Response({'non_field_errors': ['email_not_activated']},
                                     status=status.HTTP_400_BAD_REQUEST)
 
         if 'phone_number' in serializer.data:
             users = self.get_users_by_phone_number(serializer.data['phone_number'])
             if not users:
-                return Response({'error': _("User with such phone number not found")},
+                return Response({'non_field_errors': ['phone_number_not_found']},
                                 status=status.HTTP_400_BAD_REQUEST)
             for user in users:
                 if user.is_phone_number_confirmed:
@@ -162,10 +165,10 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
                         except ValueError as e:
                             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
                     else:
-                        return Response({'error': _("Can't use unactivated phone number or SMS was sent in 24 hours")},
+                        return Response({'non_field_errors': ['too_frequent_sms_request']},
                                         status=status.HTTP_400_BAD_REQUEST)
                 else:
-                    return Response({'error': _("Can't use unactivated phone number or SMS was sent in 24 hours")},
+                    return Response({'non_field_errors': ['phone_number_not_confirmed']},
                                     status=status.HTTP_400_BAD_REQUEST)
         return Response({}, status=status.HTTP_204_NO_CONTENT)
 
@@ -238,7 +241,7 @@ class RequestPhoneNumberConfirmPin(generics.GenericAPIView):
             request.user.send_phone_number_confirmation_sms()
             request.user.send_phone_number_candidate_confirmation_sms()
             return Response({})
-        return Response({'error': '24hours'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'non_field_errors': ['too_frequent_sms_request']}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RequestEmailConfirmPin(generics.GenericAPIView):
@@ -265,4 +268,4 @@ class UserByPhoneOrEmail(generics.GenericAPIView):
         if user:
             return Response(ShortCustomUserSerializer(user).data)
         else:
-            return Response({'error': "no user found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'non_field_errors': ['user_not_found']}, status=status.HTTP_404_NOT_FOUND)

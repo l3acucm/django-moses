@@ -1,16 +1,25 @@
+import os
+
 SECRET_KEY = "fake-key"
 
 DEBUG = True
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": "sinbad",
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': 'moses',
+        'USER': 'postgres',
+        'PASSWORD': 'abcxyz123',
+        'HOST': 'localhost',
+        'PORT': 5432
     }
 }
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+MACOS = bool(int(os.environ.get('MACOS', 0)))
 AUTH_USER_MODEL = 'moses.CustomUser'
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
-ROOT_URLCONF = "test_project.urls"
+ROOT_URLCONF = "urls"
 AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend", "guardian.backends.ObjectPermissionBackend")
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
@@ -18,7 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.sites",
-    "django.contrib.staticfiles",
+    "rest_framework",
     "moses"
 ]
 
@@ -47,3 +56,7 @@ DJOSER = {
         'token_obtain': 'moses.serializers.TokenObtainSerializer'
     }
 }
+
+if MACOS:
+    GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
+    GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
