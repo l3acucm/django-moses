@@ -6,7 +6,7 @@ DEBUG = True
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'moses',
         'USER': 'postgres',
         'PASSWORD': 'abcxyz123',
