@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "django-moses"
 version = "0.8.6"
 dependencies = [
-    'django==4.2.a1',
+    'django==4.2.b1',
     'djangorestframework-simplejwt',
-    'djoser @ git+https://github.com/sunscrapers/djoser@master#egg=djoser',
+    'djoser @ git+https://github.com/sunscrapers/djoser',
     'pyotp'
 ]
 
