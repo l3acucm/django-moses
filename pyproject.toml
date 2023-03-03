@@ -4,13 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-moses"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
-    'django==4.2.a1',
+    'django==4.2.b1',
     'djangorestframework-simplejwt',
-    'djoser @ git+https://github.com/sunscrapers/djoser@master#egg=djoser',
+    'djoser @ git+https://github.com/sunscrapers/djoser',
     'pyotp'
 ]
 
 [tool.setuptools]
 packages = ['moses']
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "test_project.settings"
+pythonpath = "."
+addopts = "--nomigrations"
+python_files = ["moses/*.py", "test_project/*.py"]

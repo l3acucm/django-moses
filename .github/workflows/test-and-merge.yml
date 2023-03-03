@@ -6,11 +6,21 @@ on:
 jobs:
   build-test-push:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:latest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: abcxyz123
+          POSTGRES_DB: moses_test
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-python@v2
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - name: Test
         run: pip install -r test_project/requirements.txt && pip install . && cd test_project && pytest
       - name: Merge dev -> main

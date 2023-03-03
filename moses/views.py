@@ -45,8 +45,8 @@ class ConfirmPhoneNumber(generics.GenericAPIView):
                 with translation.override(request.user.preferred_language):
                     send_mail(_("Phone number changed"),
                               _(
-                                  "Your phone number has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                              'noreply@' + settings.DOMAIN, [request.user.email])
+                                  f"Your phone number has been changed. If it happened without your desire - contact us by email support@{moses_settings.DOMAIN}."),
+                              'noreply@' + moses_settings.DOMAIN, [request.user.email])
                 return Response({'result': 'ok'})
         return Response({'non_field_errors': ['invalid_pin']}, status.HTTP_400_BAD_REQUEST)
 
@@ -64,8 +64,8 @@ class ConfirmEmail(generics.GenericAPIView):
                 with translation.override(request.user.preferred_language):
                     send_mail(_("Email changed"),
                               _(
-                                  "Your email has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                              'noreply@' + settings.DOMAIN, [candidate_email])
+                                  f"Your email has been changed. If it happened without your desire - contact us by email support@{moses_settings.DOMAIN}."),
+                              'noreply@' + moses_settings.DOMAIN, [candidate_email])
             return Response({'result': 'ok'})
         return Response({'non_field_errors': ['invalid_pin']}, status.HTTP_400_BAD_REQUEST)
 
@@ -224,8 +224,9 @@ class SetPasswordView(ActionViewMixin, generics.GenericAPIView):
         with translation.override(self.request.user.preferred_language):
             send_mail(_("Password changed"),
                       _(
-                          "Your password has been changed. If it happened without your desire - contact us by email support@wts.guru."),
-                      'noreply@' + settings.DOMAIN, [self.request.user.email])
+                          "Your password has been changed. "
+                          f"If it happened without your desire - contact us by email support@{moses_settings.domain}."),
+                      'noreply@' + moses_settings.DOMAIN, [self.request.user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 

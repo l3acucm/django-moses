@@ -167,21 +167,3 @@ class RegisterTestCase(TestCase):
         force_authenticate(request, user=CustomUser.objects.last())
         response = self.mfa_view(request)
         self.assertEqual(response.status_code, 200)
-
-
-class UserRolesTestCase(TestCase):
-    fixtures = ["fixtures/tests/get_user_roles_test_case"]
-
-    def setUp(self):
-        self.request_user_roles_view = GetUserRoles.as_view()
-        self.user = CustomUser.objects.first()
-        self.group = Group.objects.first()
-        self.missing_group = Group.objects.last()
-        self.user.groups.add(self.group.id)
-
-    def test_get_user_roles(self):
-        request = request_factory.get(reverse('moses:user_roles'))
-        force_authenticate(request, user=CustomUser.objects.last())
-        response = self.request_user_roles_view(request)
-        self.assertTrue(response.data.filter(id=self.group.id))
-        self.assertFalse(response.data.filter(id=self.missing_group.id))

@@ -4,3 +4,4 @@ pytest-django
 factory-boy
 mock
 pyotp
+psycopg==3.1.8
