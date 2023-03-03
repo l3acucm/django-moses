@@ -9,6 +9,7 @@ dependencies = [
     'django==4.2.a1',
     'djangorestframework-simplejwt',
     'djoser',
+    'git+https://github.com/python-social-auth/social-app-django.git',
     'pyotp'
 ]
 
