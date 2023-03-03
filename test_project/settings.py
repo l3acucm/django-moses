@@ -19,12 +19,13 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 MACOS = bool(int(os.environ.get('MACOS', 0)))
 AUTH_USER_MODEL = 'moses.CustomUser'
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
-ROOT_URLCONF = "urls"
+ROOT_URLCONF = "test_project.urls"
 AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend", "guardian.backends.ObjectPermissionBackend")
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "django.contrib.sessions",
+    "django.contrib.admin",
     "django.contrib.messages",
     "django.contrib.sites",
     "rest_framework",
@@ -33,8 +34,8 @@ INSTALLED_APPS = [
 
 MOSES = {
     "DEFAULT_LANGUAGE": 'en',
-    "SEND_SMS_HANDLER": "tests.mocks.send_sms_handler",
-    "PHONE_NUMBER_VALIDATOR": "tests.mocks.validate_phone_number",
+    "SEND_SMS_HANDLER": "test_project.tests.mocks.send_sms_handler",
+    "PHONE_NUMBER_VALIDATOR": "test_project.tests.mocks.validate_phone_number",
     "DOMAIN": "abc.xyz",
     "URL_PREFIX": "https://abc.xyz",
     "IP_HEADER": "HTTP_CF_CONNECTING_IP" if DEBUG else None,
