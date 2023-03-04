@@ -15,7 +15,7 @@ pyotp = "^2.8.0"
 [tool.poetry.group.test.dependencies]
 pytest-django = "^4.5.2"
 pytest-cov = "^4.0.0"
-factoryboy = "^3.2.1"
+factory_boy = "^3.2.1"
 
 [tool.poetry.group.dev.dependencies]
 psycopg = "^3.1.8"
