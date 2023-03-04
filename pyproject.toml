@@ -1,3 +1,6 @@
+[project]
+name = "django-moses"
+
 [tool.poetry]
 name = "django-moses"
 description = "Advanced authentication with OTP and phone number verification"
