@@ -21,7 +21,7 @@ factory_boy = "^3.2.1"
 psycopg = "^3.1.8"
 
 [tool.setuptools]
-py-modules = ['moses']
+packages = ['moses']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"
