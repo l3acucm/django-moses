@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 import factory
 import pyotp
-from django.contrib.auth.models import Group
 from factory.django import DjangoModelFactory
 
 from django.test import TestCase

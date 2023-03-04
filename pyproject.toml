@@ -1,19 +1,24 @@
-[build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
-
-[project]
+[tool.poetry]
 name = "django-moses"
+description = "Advanced authentication with OTP and phone number verification"
 version = "0.8.7"
-dependencies = [
-    'django==4.2.b1',
-    'djangorestframework-simplejwt',
-    'djoser @ git+https://github.com/sunscrapers/djoser',
-    'pyotp'
-]
+authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 
-[tool.setuptools]
-packages = ['moses']
+
+[tool.poetry.dependencies]
+python = "^3.10"
+django = "^4.2b1"
+djangorestframework-simplejwt = "^5.2.2"
+djoser = { git = "https://github.com/sunscrapers/djoser.git" }
+pyotp = "^2.8.0"
+
+[tool.poetry.group.test.dependencies]
+pytest-django = "^4.5.2"
+pytest-cov = "^4.0.0"
+factory_boy = "^3.2.1"
+
+[tool.poetry.group.dev.dependencies]
+psycopg = "^3.1.8"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"

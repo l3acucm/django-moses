@@ -21,8 +21,10 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: '3.11'
+      - name: Run image
+        uses: abatilo/actions-poetry@v2
       - name: Test
-        run: pip install -r test_project/requirements.txt && pip install . && cd test_project && pytest
+        run: poetry install && poetry run pytest
       - name: Merge dev -> main
         uses: devmasx/merge-branch@v1.3.1
         with:
