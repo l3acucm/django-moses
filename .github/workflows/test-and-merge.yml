@@ -24,7 +24,7 @@ jobs:
       - name: Run image
         uses: abatilo/actions-poetry@v2
       - name: Test
-        run: poetry install && pytest
+        run: poetry install && poetry run pytest
       - name: Merge dev -> main
         uses: devmasx/merge-branch@v1.3.1
         with:
