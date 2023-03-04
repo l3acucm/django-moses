@@ -1,16 +1,21 @@
+[project]
+name = "django-moses"
+version = "0.8.7"
+requires-python = ">=3.10"
+
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "django-moses"
-version = "0.8.7"
-dependencies = [
-    'django==4.2.b1',
-    'djangorestframework-simplejwt',
-    'djoser @ git+https://github.com/sunscrapers/djoser',
-    'pyotp'
-]
+[tool.poetry.dependencies]
+django = "^4.1"
+djangorestframework-simplejwt = "^5.2.2"
+djoser = { git = "https://github.com/sunscrapers/djoser.git" }
+pyotp = "^2.8.9"
+
+[tool.poetry.group.test.dependencies]
+pytest-django = "^4.5.2"
+pytest-cov = "^4.0.0"
 
 [tool.setuptools]
 packages = ['moses']
