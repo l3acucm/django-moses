@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Test
-        run: pip install -r test_project/requirements.txt && poetry install  && pytest
+        run: poetry install && pytest
       - name: Merge dev -> main
         uses: devmasx/merge-branch@v1.3.1
         with:
