@@ -1,4 +1,5 @@
 import random
+import uuid
 
 import pyotp as pyotp
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
@@ -47,6 +48,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = _("User")
         verbose_name_plural = _("Users")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     email = models.EmailField(unique=True, blank=False)
     email_candidate = models.EmailField(blank=True, verbose_name=_("Email candidate"))
