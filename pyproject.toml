@@ -28,4 +28,4 @@ packages = ['moses']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"
-pythonpath = "."
+python_paths = "testproject"
