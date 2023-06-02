@@ -8,7 +8,6 @@ description = "Advanced authentication with OTP and phone number verification"
 version = "0.8.7"
 authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 
-
 [tool.poetry.dependencies]
 python = "^3.10"
 django = "^4.2"
@@ -30,5 +29,3 @@ packages = ['moses']
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"
 pythonpath = "."
-addopts = "--nomigrations"
-python_files = ["moses/*.py", "test_project/*.py"]
