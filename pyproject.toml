@@ -11,7 +11,7 @@ authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-django = "^4.2b1"
+django = "^4.2"
 djangorestframework-simplejwt = "^5.2.2"
 djoser = { git = "https://github.com/sunscrapers/djoser.git" }
 pyotp = "^2.8.0"
