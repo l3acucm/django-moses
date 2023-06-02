@@ -12,7 +12,6 @@ authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 python = "^3.10"
 django = "^4.2"
 djangorestframework-simplejwt = "^5.2.2"
-django_extensions = "^3.2.1"
 djoser = "^2.2.0"
 pyotp = "^2.8.0"
 
