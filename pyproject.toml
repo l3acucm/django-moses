@@ -28,4 +28,6 @@ packages = ['moses']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"
-python_paths = "test_project"
+pythonpath = "."
+addopts = "--nomigrations"
+python_files = ["moses/*.py", "test_project/*.py"]
