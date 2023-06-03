@@ -7,6 +7,10 @@ name = "django-moses"
 description = "Advanced authentication with OTP and phone number verification"
 version = "0.8.7"
 authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
+include = [
+    { path = "migrations", format = "sdist" }
+]
+
 
 [tool.poetry.dependencies]
 python = "^3.10"
