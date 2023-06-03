@@ -7,10 +7,6 @@ name = "django-moses"
 description = "Advanced authentication with OTP and phone number verification"
 version = "0.8.7"
 authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
-include = [
-    { path = "migrations", format = "sdist" }
-]
-
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -28,7 +24,7 @@ factory_boy = "^3.2.1"
 psycopg = "^3.1.8"
 
 [tool.setuptools]
-packages = ['moses']
+packages = ['moses', 'moses.migrations']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"
