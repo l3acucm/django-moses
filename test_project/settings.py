@@ -1,5 +1,7 @@
 import os
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
 SECRET_KEY = "fake-key"
 
 DEBUG = True
@@ -20,12 +22,11 @@ MACOS = bool(int(os.environ.get('MACOS', 0)))
 AUTH_USER_MODEL = 'moses.CustomUser'
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 ROOT_URLCONF = "test_project.urls"
-AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend", "guardian.backends.ObjectPermissionBackend")
+AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend",)
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "django.contrib.sessions",
-    "django.contrib.admin",
     "django.contrib.messages",
     "django.contrib.sites",
     "rest_framework",
@@ -43,7 +44,6 @@ MOSES = {
         ('en', "English"),
     ),
 }
-
 
 DJOSER = {
     'DOMAIN': "abc.xyz",
