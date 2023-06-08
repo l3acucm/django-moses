@@ -119,7 +119,7 @@ class MFAView(generics.GenericAPIView):
 
         elif not request.user.mfa_secret_key and request.data['action'] == 'enable':
             mfa_secret_key = request.data.get('mfa_secret_key')
-            otp = request.data.get('otp', '')
+            otp = request.headers.get('otp', '')
             if pyotp.totp.TOTP(mfa_secret_key.encode('utf-8')).verify(otp):
                 request.user.mfa_secret_key = mfa_secret_key
                 request.user.save()
