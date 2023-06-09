@@ -26,6 +26,7 @@ urlpatterns = [
 
     path('password/', accounts_views.SetPasswordView.as_view(), name='set_password'),
     path('password/reset/', accounts_views.ResetPassword.as_view(), name='reset-password'),
+    path('password/reset/confirm/', djoser_views.UserViewSet.as_view({'post': 'reset_password_confirm'}), name='reset-password-confirm'),
     path('is_email_available/', accounts_views.CheckEmailAvailability.as_view(),
          name='check_email_availability'),
     path('is_mfa_enabled_for_phone_number/', accounts_views.CheckIsMFAEnabled.as_view(),
