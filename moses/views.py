@@ -114,7 +114,7 @@ class MFAView(generics.GenericAPIView):
             mfa_secret_key = base64.b32encode(
                 bytes(''.join(random.choice(string.ascii_letters) for _ in range(100)).encode('utf-8'))).decode('utf-8')
             return Response({'mfa_url': pyotp.totp.TOTP(mfa_secret_key.encode('utf-8'))
-                            .provisioning_uri(f"{request.user.first_name} {request.user.last_name}", "sunpay.kz"),
+                            .provisioning_uri(f"{request.user.first_name} {request.user.last_name}", moses_settings.DOMAIN),
                              'mfa_secret_key': mfa_secret_key})
 
         elif not request.user.mfa_secret_key and request.data['action'] == 'enable':
@@ -202,7 +202,7 @@ class ResetPassword(ActionViewMixin, generics.GenericAPIView):
         url = settings.URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
             token=default_token_generator.make_token(user),
             uid=encode_uid(user.pk))
-        settings.SEND_SMS_HANDLER(to=user.phone_number, body=url)
+        moses_settings.SEND_SMS_HANDLER(to=user.phone_number, body=url)
         user.last_password_reset_sms_sent_at = timezone.now()
         user.save()
 

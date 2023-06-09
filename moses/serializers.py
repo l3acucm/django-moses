@@ -37,8 +37,10 @@ class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
     phone_number = serializers.CharField(required=False)
 
-    default_error_messages = {'email_not_found': constants.Messages.EMAIL_NOT_FOUND,
-                              'phone_number_not_found': _('User with given phone number does not exist.')}
+    default_error_messages = {
+        'email_not_found': constants.Messages.EMAIL_NOT_FOUND,
+        'phone_number_not_found': _('User with given phone number does not exist.')
+    }
 
     def validate_email(self, value):
         users = self.context['view'].get_users_by_email(value)
@@ -224,12 +226,10 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
         return RefreshToken.for_user(user)
 
     def validate(self, attrs):
-
         authenticate_kwargs = {
             self.username_field: attrs[self.username_field],
             'password': attrs['password'],
-            'otp': attrs.get('otp'),
-            'ip': self.context['request'].META[moses_settings.IP_HEADER] if moses_settings.IP_HEADER else None
+            'otp': attrs.get('otp')
         }
         try:
             authenticate_kwargs['request'] = self.context['request']

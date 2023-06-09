@@ -22,9 +22,10 @@ Quick start
     
 3. Allow OTP header in django-cors-headers config::
 
-    CORS_ALLOW_HEADERS = list(default_headers) + [
+    CORS_ALLOW_HEADERS = (
+        *default_headers,
         "otp",
-    ]
+   )
     
 4. Add MFAModelBackend as Authentication backend to process OTP on authentication::
 
