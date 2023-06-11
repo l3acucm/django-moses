@@ -6,15 +6,13 @@ from datetime import datetime, timedelta
 
 import factory
 import pyotp
-from factory.django import DjangoModelFactory
-
 from django.test import TestCase
 from django.urls import reverse, resolve
-
+from factory.django import DjangoModelFactory
 from rest_framework.test import force_authenticate, APIRequestFactory
 
 from moses.models import CustomUser
-from moses.views import ConfirmPhoneNumber, RequestEmailConfirmPin, RequestPhoneNumberConfirmPin, MFAView, GetUserRoles
+from moses.views import ConfirmPhoneNumber, RequestEmailConfirmPin, RequestPhoneNumberConfirmPin, MFAView
 
 request_factory = APIRequestFactory()
 
@@ -130,8 +128,9 @@ class RegisterTestCase(TestCase):
         request = request_factory.post(reverse('moses:request_phone_number_confirm_pin'))
         force_authenticate(request, user=CustomUser.objects.last())
         self.request_phone_number_pin_view(request)
-        self.assertEqual((CustomUser.objects.last().phone_number_confirm_pin, request.user.phone_number_candidate_confirm_pin),
-                         first_pins)
+        self.assertEqual(
+            (CustomUser.objects.last().phone_number_confirm_pin, request.user.phone_number_candidate_confirm_pin),
+            first_pins)
         self.assertNotIn('+996507030930', SENT_SMS)
         self.assertNotIn('+996507030931', SENT_SMS)
         request.user.last_phone_number_confirm_pin_sent -= timedelta(days=1)
@@ -147,9 +146,10 @@ class RegisterTestCase(TestCase):
         self.assertIn('+996507030930', SENT_SMS)
         self.assertIn('+996507030931', SENT_SMS)
         random_key = base64.b32encode(
-                bytes(''.join(random.choice(string.ascii_letters) for _ in range(16)).encode('utf-8'))).decode('utf-8')
+            bytes(''.join(random.choice(string.ascii_letters) for _ in range(16)).encode('utf-8'))).decode('utf-8')
         request = request_factory.post(reverse('moses:mfa'),
-                                        {'action': 'enable', 'mfa_secret_key': random_key, 'otp': pyotp.totp.TOTP(random_key.encode('utf-8')).now()})
+                                       {'action': 'enable', 'mfa_secret_key': random_key},
+                                       headers={'otp': pyotp.totp.TOTP(random_key.encode('utf-8')).now()})
 
         force_authenticate(request, user=CustomUser.objects.last())
         response = self.mfa_view(request)
