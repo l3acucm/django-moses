@@ -142,18 +142,19 @@ class JWTTokenUserAuthentication(JWTAuthentication):
 
 
 class MFAModelBackend:
-    def authenticate(self, request, username=None, password=None, **kwargs):
+    def authenticate(self, request, username=None, password=None, domain=None, **kwargs):
         if username is None:
             username = kwargs.get(UserModel.USERNAME_FIELD)
         try:
-            user = UserModel._default_manager.get_by_natural_key(username)
+            user = UserModel.objects.get(username=username, domain=domain)
         except UserModel.DoesNotExist:
             # Run the default password hasher once to reduce the timing
             # difference between an existing and a nonexistent user (#20760).
             UserModel().set_password(password)
         else:
-            success = user.check_password(password) and user.check_mfa_otp(kwargs.get('otp')) and self.user_can_authenticate(
-                    user)
+            success = (user.check_password(password) and
+                       user.check_mfa_otp(kwargs.get('otp')) and
+                       self.user_can_authenticate(user))
 
             extra_fields = {
                 "ip": kwargs.get('ip'),

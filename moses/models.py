@@ -2,6 +2,7 @@ import random
 import uuid
 
 import pyotp as pyotp
+from django.conf import settings as django_settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
@@ -11,7 +12,6 @@ from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
 from moses.conf import settings as moses_settings
-from django.conf import settings as django_settings
 
 
 class CustomUserManager(BaseUserManager):
@@ -48,26 +48,41 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = _("User")
         verbose_name_plural = _("Users")
+        constraints = [
+            models.UniqueConstraint(fields=['site', 'phone_number'], name='one_phone_number_per_site'),
+            models.UniqueConstraint(fields=['site', 'email'], name='one_email_per_site')
+        ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    email = models.EmailField(unique=True, blank=False)
+    site = models.ForeignKey(
+        'sites.Site',
+        related_name='users',
+        on_delete=models.CASCADE
+    )
+
+    email = models.EmailField(blank=False)
     email_candidate = models.EmailField(blank=True, verbose_name=_("Email candidate"))
     is_email_confirmed = models.BooleanField(default=False, verbose_name=_("Is email confirmed"))
     email_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_("Email confirm PIN"))
     email_candidate_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_("Email candidate confirm PIN"))
     email_confirm_attempts = models.PositiveSmallIntegerField(default=0, verbose_name=_("Email confirm attempts"))
 
-    phone_number = models.CharField(max_length=200, unique=True, verbose_name=_("Phone number"))
-    phone_number_candidate = models.CharField(max_length=200, blank=True,
-                                              verbose_name=_("Phone number candidate"))
+    phone_number = models.CharField(max_length=20, verbose_name=_("Phone number"))
+    phone_number_candidate = models.CharField(max_length=20, blank=True, verbose_name=_("Phone number candidate"))
     is_phone_number_confirmed = models.BooleanField(default=False, verbose_name=_("Is phone number confirmed"))
     phone_number_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_("Phone number confirm PIN"))
     phone_number_candidate_confirm_pin = models.PositiveIntegerField(default=0, verbose_name=_(
         "Phone number candidate confirm PIN"))
-    phone_number_confirm_attempts = models.PositiveSmallIntegerField(default=0, verbose_name=_("Phone number confirm attempts"))
-    last_password_reset_sms_sent_at = models.DateTimeField(blank=True, null=True,
-                                                           verbose_name=_("Last password reset sms sent at"))
+    phone_number_confirm_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_("Phone number confirm attempts")
+    )
+    last_password_reset_sms_sent_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_("Last password reset sms sent at")
+    )
 
     first_name = models.CharField(max_length=200, verbose_name=_("First name"), blank=True)
     last_name = models.CharField(max_length=200, verbose_name=_("Last name"), blank=True)
@@ -75,10 +90,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name=_("Is active"))
     is_staff = models.BooleanField(default=False, verbose_name=_("Is staff"))
 
-    preferred_language = models.CharField(choices=moses_settings.LANGUAGE_CHOICES,
-                                          default=moses_settings.DEFAULT_LANGUAGE,
-                                          max_length=10,
-                                          verbose_name=_("Preferred language"))
+    preferred_language = models.CharField(
+        choices=moses_settings.LANGUAGE_CHOICES,
+        default=moses_settings.DEFAULT_LANGUAGE,
+        max_length=10,
+        verbose_name=_("Preferred language")
+    )
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
 
     mfa_secret_key = models.CharField(blank=True, default='', max_length=160)
@@ -104,9 +121,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         self.last_phone_number_confirm_pin_sent = timezone.now()
         self.save()
         with translation.override(self.preferred_language):
-            moses_settings.SEND_SMS_HANDLER(self.phone_number,
-                                            _("Phone number confirmation PIN: ") + str(
-                                                self.phone_number_confirm_pin).zfill(6))
+            moses_settings.SEND_SMS_HANDLER(
+                self.phone_number,
+                _("Phone number confirmation PIN: ") + str(self.phone_number_confirm_pin).zfill(6)
+            )
 
     def send_phone_number_candidate_confirmation_sms(self, generate_new=False):
         if not self.phone_number_candidate:
@@ -172,11 +190,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.save()
         with translation.override(self.preferred_language):
             send_mail(_("Email confirmation PIN"), _("Your email confirmation PIN is: ") + str(self.email_confirm_pin),
-                      'noreply@' + moses_settings.DOMAIN, [self.email])
-
-    def send_payeer_wallet_changed_email(self):
-        with translation.override(self.preferred_language):
-            send_mail(_("Payeer wallet has been updated"), _("Your payeer wallet has been updated "),
                       'noreply@' + moses_settings.DOMAIN, [self.email])
 
     def send_email_candidate_confirmation_email(self, generate_new=False):

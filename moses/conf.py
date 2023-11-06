@@ -4,7 +4,6 @@ from django.utils.functional import LazyObject
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext as _
 
-
 MOSES_SETTINGS_NAMESPACE = "MOSES"
 
 
