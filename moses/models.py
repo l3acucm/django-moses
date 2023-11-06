@@ -1,5 +1,6 @@
 import random
 import uuid
+from datetime import timedelta
 
 import pyotp as pyotp
 from django.conf import settings as django_settings
@@ -8,7 +9,6 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
 from django.db import models
 from django.utils import timezone, translation
-from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
 from moses.conf import settings as moses_settings
@@ -99,8 +99,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
 
     mfa_secret_key = models.CharField(blank=True, default='', max_length=160)
-    last_phone_number_confirm_pin_sent = models.DateTimeField(default=now)
-    last_phone_number_candidate_confirm_pin_sent = models.DateTimeField(default=now)
+    last_phone_number_confirm_pin_sent = models.DateTimeField(null=True, blank=True)
+    last_phone_number_candidate_confirm_pin_sent = models.DateTimeField(null=True, blank=True)
     userpic = models.ImageField(upload_to='images/userpics/', blank=True, null=True)
 
     USERNAME_FIELD = 'phone_number'
@@ -131,58 +131,64 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             return
         if generate_new or self.phone_number_candidate_confirm_pin == 0:
             self.phone_number_candidate_confirm_pin = random.randint(0, 999999)
+        if (
+                self.last_phone_number_candidate_confirm_pin_sent is not None and
+                self.last_phone_number_candidate_confirm_pin_sent > timezone.now() - timedelta(
+            minutes=moses_settings.MINUTES_BETWEEN_CONFIRMATION_PIN_SMS
+        )):
+            return
         self.last_phone_number_candidate_confirm_pin_sent = timezone.now()
         self.save()
         with translation.override(self.preferred_language):
-            moses_settings.SEND_SMS_HANDLER(self.phone_number_candidate,
-                                            _("Phone number confirmation PIN: ") + str(
-                                                self.phone_number_candidate_confirm_pin).zfill(
-                                                6))
+            moses_settings.SEND_SMS_HANDLER(
+                self.phone_number_candidate,
+                _("Phone number confirmation PIN: ") + str(
+                    self.phone_number_candidate_confirm_pin).zfill(
+                    6))
 
     def try_to_confirm_email(self, main_pin_str: str, candidate_pin_str: str):
-        if self.email_confirm_attempts > 4:
-            return False
-        try:
-            received_pin, received_candidate_pin = int(main_pin_str), int(candidate_pin_str or '0')
-            if received_pin == self.email_confirm_pin and (
-                    not self.email_candidate or self.email_candidate_confirm_pin == received_candidate_pin):
-                self.email_confirm_pin = self.email_candidate_confirm_pin = 0
-                self.is_email_confirmed = True
-                self.email_confirm_attempts = 0
-                if self.email_candidate:
-                    self.email = self.email_candidate
-                    self.email_candidate = ''
-                self.save()
-                return True
-            else:
-                self.email_confirm_attempts += 1
-                self.save()
-                return False
-        except ValueError:
+        if self.email_confirm_attempts == moses_settings.MAX_EMAIL_CONFIRMATION_ATTEMPTS:
+            return False, False
+        received_pin, received_candidate_pin = int(main_pin_str), int(candidate_pin_str or '0')
+        is_main_pin_correct = received_pin == self.email_confirm_pin
+        is_candidate_pin_correct = None
+        if self.email_candidate:
+            is_candidate_pin_correct = self.email_candidate_confirm_pin == received_candidate_pin
+        if is_main_pin_correct and (is_candidate_pin_correct is None or is_candidate_pin_correct):
+            self.email_confirm_pin = 0
+            self.email_candidate_confirm_pin = 0
+            self.is_email_confirmed = True
+            self.email_confirm_attempts = 0
+            if self.email_candidate:
+                self.email = self.email_candidate
+                self.email_candidate = ''
+            self.save()
+        else:
             self.email_confirm_attempts += 1
             self.save()
-            return False
+        return is_main_pin_correct, is_candidate_pin_correct
 
     def try_to_confirm_phone_number(self, main_pin_str: str, candidate_pin_str: str):
-        try:
-            received_pin, received_candidate_pin = int(main_pin_str), int(candidate_pin_str or '0')
-            if received_pin == self.phone_number_confirm_pin and \
-                    (not self.phone_number_candidate or
-                     self.phone_number_candidate_confirm_pin == received_candidate_pin):
-                self.phone_number_confirm_pin = 0
-                self.is_phone_number_confirmed = True
-                self.phone_number_confirm_attempts = 0
-                if self.phone_number_candidate:
-                    self.phone_number = self.phone_number_candidate
-                    self.phone_number_candidate = ''
-                self.save()
-                return True
-            else:
-                return False
-        except ValueError:
+        if self.phone_number_confirm_attempts == moses_settings.MAX_PHONE_NUMBER_CONFIRMATION_ATTEMPTS:
+            return False, False
+        received_pin, received_candidate_pin = int(main_pin_str), int(candidate_pin_str or '0')
+        is_main_pin_correct = received_pin == self.phone_number_confirm_pin
+        is_candidate_pin_correct = None
+        if self.phone_number_candidate:
+            is_candidate_pin_correct = self.phone_number_candidate_confirm_pin == received_candidate_pin
+        if is_main_pin_correct and (is_candidate_pin_correct is None or is_candidate_pin_correct):
+            self.phone_number_confirm_pin = 0
+            self.phone_number_candidate_confirm_pin = 0
+            self.is_phone_number_confirmed = True
+            self.phone_number_confirm_attempts = 0
+            if self.phone_number_candidate:
+                self.phone_number = self.phone_number_candidate
+                self.phone_number_candidate = ''
+            self.save()
+        else:
             self.phone_number_confirm_attempts += 1
             self.save()
-            return False
+        return is_main_pin_correct, is_candidate_pin_correct
 
     def send_email_confirmation_email(self, generate_new=False):
         if generate_new or self.email_confirm_pin == 0:

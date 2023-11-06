@@ -146,7 +146,7 @@ class MFAModelBackend:
         if username is None:
             username = kwargs.get(UserModel.USERNAME_FIELD)
         try:
-            user = UserModel.objects.get(username=username, domain=domain)
+            user = UserModel.objects.get(phone_number=username, site__domain=domain)
         except UserModel.DoesNotExist:
             # Run the default password hasher once to reduce the timing
             # difference between an existing and a nonexistent user (#20760).

@@ -20,6 +20,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
+from moses import errors
 from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
 from moses.models import CustomUser
@@ -443,7 +444,7 @@ class UserViewSet(viewsets.ModelViewSet):
             request.data['pin'],
             request.data.get('candidate_pin', '')
         )
-        if confirmation_result:
+        if False not in confirmation_result:
             if candidate_phone_number:
                 with translation.override(request.user.preferred_language):
                     send_mail(
@@ -457,9 +458,10 @@ class UserViewSet(viewsets.ModelViewSet):
                     'success': True
                 }
             )
-        return Response(
-            {
-                'non_field_errors': ['invalid_pin']
-            },
-            status.HTTP_400_BAD_REQUEST
-        )
+        else:
+            result = dict()
+            if not confirmation_result[0]:
+                result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+            if not confirmation_result[1] and confirmation_result is not None:
+                result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+            return Response(result, status=400)

@@ -29,6 +29,9 @@ default_settings = {
     "DOMAIN": None,
     "URL_PREFIX": None,
     "IP_HEADER": None,
+    "MINUTES_BETWEEN_CONFIRMATION_PIN_SMS": 1,
+    "MAX_PHONE_NUMBER_CONFIRMATION_ATTEMPTS": 3,
+    "MAX_EMAIL_CONFIRMATION_ATTEMPTS": 3,
     "LANGUAGE_CHOICES": (
         (1, _("English")),
     ),

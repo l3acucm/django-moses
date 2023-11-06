@@ -21,5 +21,14 @@
       "phone_number": "+0",
       "email": "foo@foo.com"
     }
+  },
+  {
+    "model": "moses.customuser",
+    "pk": 2,
+    "fields": {
+      "site": 2,
+      "phone_number": "+0",
+      "email": "foo@foo.com"
+    }
   }
 ]

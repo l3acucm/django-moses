@@ -1,19 +1,23 @@
-import base64
-import random
 import re
-import string
 from datetime import timedelta
+import random
 
 import pyotp
 from django.contrib.sites.models import Site
 from django.test import TestCase
 
+from moses import errors
 from moses.models import CustomUser
 from moses.views.user import UserViewSet
 from test_project.tests import APIClient
+from test_project.tests.utils import get_random_mfa_key
 
 SENT_SMS = {}
 
+def get_random_pin_non_equal_to(pin_str):
+    while (new_pin := str(random.randint(0,999999)).zfill(6)) == pin_str:
+        continue
+    return new_pin
 
 def remember_pin(to, body):
     SENT_SMS[to] = re.findall(r'\d+', body)[0]
@@ -45,7 +49,6 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.assertFalse(self.user.is_phone_number_confirmed)
 
         self.user, response = test_client.confirm_phone_number(self.user, SENT_SMS['+996507030927'])
-
         self.assertTrue(self.user.is_phone_number_confirmed)
         self.assertEqual(self.user.phone_number_candidate, '')
         self.assertEqual(self.user.phone_number_candidate_confirm_pin, 0)
@@ -57,8 +60,37 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.assertEqual(self.user.phone_number, '+996507030927')
         self.assertTrue(self.user.is_phone_number_confirmed, True)
 
-        self.user, response = test_client.confirm_phone_number(self.user, SENT_SMS['+996507030927'],
-                                                               SENT_SMS['+996507030928'])
+        self.user, response = test_client.confirm_phone_number(
+            self.user,
+            get_random_pin_non_equal_to(SENT_SMS['+996507030927']),
+            get_random_pin_non_equal_to(SENT_SMS['+996507030928'])
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.user, response = test_client.confirm_phone_number(
+            self.user,
+            get_random_pin_non_equal_to(SENT_SMS['+996507030927']),
+            SENT_SMS['+996507030928']
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.user, response = test_client.confirm_phone_number(
+            self.user,
+            SENT_SMS['+996507030927'],
+            get_random_pin_non_equal_to(SENT_SMS['+996507030928'])
+        )
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.user, response = test_client.confirm_phone_number(
+            self.user,
+            SENT_SMS['+996507030927'],
+            SENT_SMS['+996507030928']
+        )
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(self.user.phone_number, '+996507030928')
         self.assertEqual(self.user.phone_number_candidate, '')
 
@@ -69,8 +101,11 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.user, response = test_client.update_user(self.user, {'phone_number': '+996507030930'})
         self.assertEqual(self.user.phone_number, '+996507030928')
         self.assertEqual(self.user.phone_number_candidate, '+996507030930')
-        self.user, response = test_client.confirm_phone_number(self.user, SENT_SMS['+996507030928'],
-                                                               SENT_SMS['+996507030930'])
+        self.user, response = test_client.confirm_phone_number(
+            self.user,
+            SENT_SMS['+996507030928'],
+            SENT_SMS['+996507030930']
+        )
 
         self.assertTrue(self.user.is_phone_number_confirmed)
         self.assertEqual(self.user.phone_number, '+996507030930')
@@ -101,9 +136,12 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
             first_pins)
         self.assertIn('+996507030930', SENT_SMS)
         self.assertIn('+996507030931', SENT_SMS)
-        random_key = base64.b32encode(
-            bytes(''.join(random.choice(string.ascii_letters) for _ in range(16)).encode('utf-8'))).decode('utf-8')
-        self.user, response = test_client.enable_mfa(self.user, random_key, pyotp.totp.TOTP(random_key.encode('utf-8')).now())
+        random_key = get_random_mfa_key()
+        self.user, response = test_client.enable_mfa(
+            self.user,
+            random_key,
+            pyotp.totp.TOTP(random_key.encode('utf-8')).now()
+        )
 
         self.assertEqual(response.status_code, 200)
 
@@ -111,7 +149,7 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertNotEqual(self.user.mfa_secret_key, '')
 
-        self.user, response = test_client.disable_mfa(self.user, pyotp.totp.TOTP(random_key.encode('utf-8')).now())
+        self.user, response = test_client.disable_mfa(self.user, pyotp.totp.TOTP(random_key).now())
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.user.mfa_secret_key, '')
