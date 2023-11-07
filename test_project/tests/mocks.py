@@ -3,9 +3,9 @@ from rest_framework.exceptions import ValidationError
 from moses import errors
 
 
-def send_sms_handler(a, b):
-    from test_project.tests.confirmations import remember_pin
-    remember_pin(a, b)
+def send_sms_handler(to, body):
+    from test_project.tests.utils import remember_pin
+    remember_pin(to, body)
 
 
 def validate_phone_number(a):

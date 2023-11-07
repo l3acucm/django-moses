@@ -1,5 +1,3 @@
-import re
-
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
@@ -8,12 +6,6 @@ from moses.models import CustomUser
 from test_project.tests.confirmations import test_client
 
 request_factory = APIRequestFactory()
-
-SENT_SMS = {}
-
-
-def remember_pin(to, body):
-    SENT_SMS[to] = re.findall(r'\d+', body)[0]
 
 
 class RegistrationTestCase(TestCase):

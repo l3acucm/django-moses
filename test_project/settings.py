@@ -23,6 +23,7 @@ AUTH_USER_MODEL = 'moses.CustomUser'
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 ROOT_URLCONF = "test_project.urls"
 AUTHENTICATION_BACKENDS = ("moses.authentication.MFAModelBackend",)
+DOMAIN = 'lvh.me'
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",

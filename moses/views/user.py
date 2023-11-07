@@ -6,6 +6,7 @@ import pyotp
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
+from django.contrib.sites.models import Site
 from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import translation, timezone
@@ -23,7 +24,7 @@ from rest_framework.response import Response
 from moses import errors
 from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
-from moses.models import CustomUser
+from moses.models import CustomUser, Credential
 from moses.serializers import ShortCustomUserSerializer
 
 User = get_user_model()
@@ -81,9 +82,10 @@ class UserViewSet(viewsets.ModelViewSet):
             raise ValueError(_("Email is not confirmed"))
 
     def send_password_reset_sms(self, user):
-        url = djoser_settings.URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
+        url = moses_settings.URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
             token=default_token_generator.make_token(user),
-            uid=encode_uid(user.pk))
+            uid=encode_uid(user.pk)
+        )
         moses_settings.SEND_SMS_HANDLER(to=user.phone_number, body=url)
         user.last_password_reset_sms_sent_at = timezone.now()
         user.save()
@@ -213,17 +215,17 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def set_password(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not request.user.check_password(request.data.get('current_password')):
+            return Response({'current_password': [errors.INVALID_PASSWORD]}, status=status.HTTP_400_BAD_REQUEST)
 
-        self.request.user.set_password(serializer.data['new_password'])
+        self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
         with translation.override(self.request.user.preferred_language):
             send_mail(_("Password changed"),
                       _(
                           "Your password has been changed. "
-                          f"If it happened without your desire - contact us by email support@{moses_settings.domain}."),
-                      'noreply@' + moses_settings.DOMAIN, [self.request.user.email])
+                          f"If it happened without your desire - contact us by email support@{djoser_settings.DOMAIN}."),
+                      'noreply@' + djoser_settings.DOMAIN, [self.request.user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 
@@ -231,26 +233,45 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def reset_password(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        if 'email' in serializer.data:
-            for user in self.get_users_by_email(serializer.data['email']):
+        if not Site.objects.filter(domain=request.data.get('domain')).exists():
+            return Response(
+                {
+                    'domain': [errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST]
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if 'email' in request.data:
+            users = CustomUser.objects.filter(
+                site__domain=request.data['domain'],
+                email=request.data['email']
+            )
+            if not users:
+                return Response(
+                    {
+                        'phone_number': [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            for user in users:
                 if user.is_email_confirmed:
                     self.send_password_reset_email(user)
                 else:
                     return Response(
                         {
-                            'non_field_errors': ['email_not_activated']
+                            'email': [errors.CREDENTIAL_NOT_CONFIRMED]
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-        if 'phone_number' in serializer.data:
-            users = self.get_users_by_phone_number(serializer.data['phone_number'])
+        if 'phone_number' in request.data:
+            users = CustomUser.objects.filter(
+                site__domain=request.data['domain'],
+                phone_number=request.data['phone_number']
+            )
             if not users:
                 return Response(
                     {
-                        'non_field_errors': ['phone_number_not_found']
+                        'phone_number': [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN]
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
@@ -263,14 +284,14 @@ class UserViewSet(viewsets.ModelViewSet):
                     else:
                         return Response(
                             {
-                                'non_field_errors': ['too_frequent_sms_request']
+                                'non_field_errors': [errors.TOO_FREQUENT_SMS_REQUESTS]
                             },
                             status=status.HTTP_400_BAD_REQUEST
                         )
                 else:
                     return Response(
                         {
-                            'non_field_errors': ['phone_number_not_confirmed']
+                            'phone_number': [errors.CREDENTIAL_NOT_CONFIRMED]
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
@@ -400,8 +421,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def request_phone_number_confirmation_pin(self, request):
-        if (now() - request.user.last_phone_number_confirm_pin_sent).days > 0 and \
-                (now() - request.user.last_phone_number_candidate_confirm_pin_sent).days > 0:
+        if (now() - request.user.last_phone_number_confirmation_pin_sent).days > 0 and \
+                (now() - request.user.last_phone_number_candidate_confirmation_pin_sent).days > 0:
             request.user.send_phone_number_confirmation_sms()
             request.user.send_phone_number_candidate_confirmation_sms()
             return Response({})
@@ -416,11 +437,12 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def confirm_email(self, request):
         candidate_email = request.user.email_candidate
-        confirmation_result = request.user.try_to_confirm_email(
-            request.data['pin'],
+        confirmation_result = request.user.try_to_confirm_credential(
+            Credential.EMAIL,
+            request.data.get('pin', ''),
             request.data.get('candidate_pin', '')
         )
-        if confirmation_result:
+        if False not in confirmation_result:
             if candidate_email:
                 with translation.override(request.user.preferred_language):
                     send_mail(
@@ -430,18 +452,19 @@ class UserViewSet(viewsets.ModelViewSet):
                         'noreply@' + moses_settings.DOMAIN, [candidate_email]
                     )
             return Response({'result': 'ok'})
-        return Response(
-            {
-                'non_field_errors': ['invalid_pin']
-            },
-            status.HTTP_400_BAD_REQUEST
-        )
+        result = {}
+        if confirmation_result[0] == False:
+            result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+        if confirmation_result[1] == False:
+            result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+        return Response(result, status.HTTP_400_BAD_REQUEST)
 
     @action(["post"], detail=False)
     def confirm_phone_number(self, request):
         candidate_phone_number = request.user.phone_number_candidate
-        confirmation_result = request.user.try_to_confirm_phone_number(
-            request.data['pin'],
+        confirmation_result = request.user.try_to_confirm_credential(
+            Credential.PHONE_NUMBER,
+            request.data.get('pin', ''),
             request.data.get('candidate_pin', '')
         )
         if False not in confirmation_result:
@@ -462,6 +485,6 @@ class UserViewSet(viewsets.ModelViewSet):
             result = dict()
             if not confirmation_result[0]:
                 result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-            if not confirmation_result[1] and confirmation_result is not None:
+            if not confirmation_result[1] and confirmation_result[1] is not None:
                 result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
             return Response(result, status=400)

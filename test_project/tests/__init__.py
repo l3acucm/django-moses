@@ -21,9 +21,12 @@ class APIClient:
         self.request_phone_number_confirmation_pin_view = UserViewSet.as_view(
             {'post': 'request_phone_number_confirmation_pin'})
         self.confirm_phone_number_view = UserViewSet.as_view({'post': 'confirm_phone_number'})
+        self.confirm_email_view = UserViewSet.as_view({'post': 'confirm_email'})
+        self.update_password_view = UserViewSet.as_view({'post': 'set_password'})
         self.enable_mfa_view = UserViewSet.as_view({'post': 'enable_mfa'})
         self.disable_mfa_view = UserViewSet.as_view({'post': 'disable_mfa'})
         self.login_view = TokenObtainPairView.as_view()
+        self.reset_password_view = UserViewSet.as_view({'post': 'reset_password'})
         self._namespace = namespace
 
     def create_user(self, phone_number, password, name, email, domain):
@@ -82,6 +85,15 @@ class APIClient:
         response = self.request_phone_number_confirmation_pin_view(request)
         return get_user_model().objects.get(id=user.id), response
 
+    def reset_password(self, phone_number, domain):
+        request = drf_request_factory.post(
+            reverse('moses:customuser-reset-password'),
+            json.dumps({'phone_number': phone_number, 'domain': domain}),
+            content_type='application/json',
+        )
+        response = self.reset_password_view(request)
+        return response
+
     def update_user(self, user, data):
         request = drf_request_factory.patch(
             reverse('moses:customuser-me'),
@@ -93,7 +105,9 @@ class APIClient:
         return get_user_model().objects.get(id=user.id), response
 
     def confirm_phone_number(self, user, pin, candidate_pin=None):
-        data = {'pin': pin}
+        data = dict()
+        if pin is not None:
+            data['pin'] = pin
         if candidate_pin is not None:
             data['candidate_pin'] = candidate_pin
         request = drf_request_factory.post(
@@ -103,6 +117,34 @@ class APIClient:
         )
         force_authenticate(request, user)
         response = self.confirm_phone_number_view(request)
+        return get_user_model().objects.get(id=user.id), response
+
+    def confirm_email(self, user, pin=None, candidate_pin=None):
+        data = {}
+        if candidate_pin is not None:
+            data['pin'] = pin
+        if candidate_pin is not None:
+            data['candidate_pin'] = candidate_pin
+        request = drf_request_factory.post(
+            reverse('moses:customuser-confirm-email'),
+            json.dumps(data),
+            content_type='application/json',
+        )
+        force_authenticate(request, user)
+        response = self.confirm_email_view(request)
+        return get_user_model().objects.get(id=user.id), response
+
+    def update_password(self, user, current_password, new_password):
+        request = drf_request_factory.post(
+            reverse('moses:customuser-set-password'),
+            json.dumps({
+                'current_password': current_password,
+                'new_password': new_password
+            }),
+            content_type='application/json'
+        )
+        force_authenticate(request, user)
+        response = self.update_password_view(request)
         return get_user_model().objects.get(id=user.id), response
 
     def enable_mfa(self, user, key, otp):
