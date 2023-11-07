@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from settings import BASE_DIR
+from test_project.settings import BASE_DIR
 
 
 def main():
