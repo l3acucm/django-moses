@@ -1,7 +1,7 @@
 from django.test import TestCase
 
 from moses.models import CustomUser
-from test_project.tests import APIClient
+from test_project.app_for_tests import APIClient
 
 test_client = APIClient('')
 

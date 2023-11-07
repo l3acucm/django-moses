@@ -2,8 +2,7 @@ from django.test import TestCase
 
 from moses import errors
 from moses.models import CustomUser
-from test_project.tests import APIClient
-from test_project.tests.utils import SENT_SMS
+from test_project.app_for_tests import APIClient, utils
 
 test_client = APIClient('')
 
@@ -14,6 +13,7 @@ class ResetPasswordTestCase(TestCase):
     def setUp(self):
         self.user1 = CustomUser.objects.get(id=1)
         self.user2 = CustomUser.objects.get(id=2)
+        utils.SENT_SMS = {}
 
     def test_cannot_reset_password_on_non_existent_site(self):
         response = test_client.reset_password(
@@ -23,7 +23,7 @@ class ResetPasswordTestCase(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['domain'], [errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST])
         self.assertEqual(len(response.data), 1)
-        self.assertNotIn('+0', SENT_SMS)
+        self.assertNotIn('+0', utils.SENT_SMS)
 
     def test_cannot_reset_password_on_site_that_not_registered_on(self):
         response = test_client.reset_password(
@@ -33,7 +33,7 @@ class ResetPasswordTestCase(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['phone_number'], [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN])
         self.assertEqual(len(response.data), 1)
-        self.assertNotIn('+0', SENT_SMS)
+        self.assertNotIn('+0', utils.SENT_SMS)
 
     def test_can_reset_password_on_site_that_registered_on(self):
         response = test_client.reset_password(
@@ -41,7 +41,7 @@ class ResetPasswordTestCase(TestCase):
             'exists.com'
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn('+0', SENT_SMS)
+        self.assertIn('+0', utils.SENT_SMS)
 
     def test_can_reset_password_on_site_that_registered_on(self):
         response = test_client.reset_password(

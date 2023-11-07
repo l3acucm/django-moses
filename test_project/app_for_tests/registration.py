@@ -3,7 +3,7 @@ from rest_framework.test import APIRequestFactory
 
 from moses import errors
 from moses.models import CustomUser
-from test_project.tests.confirmations import test_client
+from test_project.app_for_tests.confirmations import test_client
 
 request_factory = APIRequestFactory()
 

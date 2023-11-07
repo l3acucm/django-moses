@@ -4,7 +4,7 @@ from moses import errors
 
 
 def send_sms_handler(to, body):
-    from test_project.tests.utils import remember_pin
+    from test_project.app_for_tests.utils import remember_pin
     remember_pin(to, body)
 
 

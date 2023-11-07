@@ -7,8 +7,8 @@ from django.test import TestCase
 from moses import errors
 from moses.models import CustomUser
 from moses.views.user import UserViewSet
-from test_project.tests import APIClient
-from test_project.tests import utils
+from test_project.app_for_tests import APIClient
+from test_project.app_for_tests import utils
 
 test_client = APIClient('')
 
@@ -23,6 +23,7 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.disable_mfa_view = UserViewSet.as_view({'post': 'disable_mfa'})
         self.get_mfa_key_veiew = UserViewSet.as_view({'get': 'get_mfa_key'})
         Site.objects.create(domain='wakamakafo.com')
+        utils.SENT_SMS = {}
 
     def test_correct_pin_codes_came_after_register(self):
         self.user, response = test_client.create_user(

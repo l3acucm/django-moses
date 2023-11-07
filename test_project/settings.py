@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.sites",
     'django.contrib.staticfiles',
+
     "rest_framework",
     "moses"
 ]
@@ -54,8 +55,8 @@ MOSES = {
     "DEFAULT_LANGUAGE": 'en',
     'MAX_PHONE_NUMBER_CONFIRMATION_ATTEMPTS': 10,
     'MINUTES_BETWEEN_CONFIRMATION_PIN_SMS': 0,
-    "SEND_SMS_HANDLER": "test_project.tests.mocks.send_sms_handler",
-    "PHONE_NUMBER_VALIDATOR": "test_project.tests.mocks.validate_phone_number",
+    "SEND_SMS_HANDLER": "test_project.app_for_tests.mocks.send_sms_handler",
+    "PHONE_NUMBER_VALIDATOR": "test_project.app_for_tests.mocks.validate_phone_number",
     "DOMAIN": "abc.xyz",
     "URL_PREFIX": "https://abc.xyz",
     "IP_HEADER": "HTTP_CF_CONNECTING_IP" if DEBUG else None,
@@ -77,7 +78,7 @@ DJOSER = {
     }
 }
 FIXTURE_DIRS = [
-    'tests/fixtures'
+    'test_project/app_for_tests/fixtures'
 ]
 if MACOS:
     GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'

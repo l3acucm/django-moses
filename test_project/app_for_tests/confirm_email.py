@@ -2,8 +2,8 @@ from django.test import TestCase
 
 from moses import errors
 from moses.models import CustomUser
-from test_project.tests import APIClient
-from test_project.tests.utils import get_random_pin_non_equal_to
+from test_project.app_for_tests import APIClient
+from test_project.app_for_tests.utils import get_random_pin_non_equal_to
 
 test_client = APIClient('')
 
