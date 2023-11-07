@@ -1,0 +1,25 @@
+[
+  {
+    "model": "sites.Site",
+    "pk": 1,
+    "fields": {
+      "domain": "exists.com"
+    }
+  },
+  {
+    "model": "sites.Site",
+    "pk": 2,
+    "fields": {
+      "domain": "exists2.com"
+    }
+  },
+  {
+    "model": "moses.customuser",
+    "pk": 1,
+    "fields": {
+      "site": 1,
+      "phone_number": "+0",
+      "email": "foo@foo.com"
+    }
+  }
+]

@@ -1,7 +1,9 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.sites.models import Site
 from django.core import exceptions as django_exceptions
+from django.core.validators import EmailValidator
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext as _
 from djoser import constants
@@ -12,6 +14,7 @@ from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from moses import errors
 from moses.conf import settings as moses_settings
 from moses.models import CustomUser
 
@@ -84,12 +87,6 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
     def get_is_mfa_enabled(self, obj):
         return len(obj.mfa_secret_key) > 0
 
-    def validate(self, attrs):
-        if 'phone_number' in attrs and not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
-            raise serializers.ValidationError({
-                'phone_number': _('Incorrect phone number')
-            })
-        return attrs
 
     def update(self, instance, validated_data):
         raise_errors_on_nested_writes('update', self, validated_data)
@@ -161,12 +158,23 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
         ]
 
 
+def site_with_domain_exists(value):
+    if not Site.objects.filter(domain=value).exists():
+        raise serializers.ValidationError(errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+
+def validate_phone_number_with_provided_validator(value):
+    if not Site.objects.filter(domain=value).exists():
+        raise serializers.ValidationError(errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+
+
 class CustomUserCreateSerializer(serializers.ModelSerializer):
-    phone_number = serializers.CharField(validators=[])
-    email = serializers.CharField(validators=[])
+    phone_number = serializers.CharField(validators=[moses_settings.PHONE_NUMBER_VALIDATOR])
+    email = serializers.CharField(validators=[EmailValidator])
+    domain = serializers.CharField(validators=[site_with_domain_exists], write_only=True)
     password = serializers.CharField(
         style={'input_type': 'password'},
-        write_only=True
+        write_only=True,
+        validators=[validate_password]
     )
     default_error_messages = {
         'cannot_create_user': constants.Messages.CANNOT_CREATE_USER_ERROR,
@@ -180,26 +188,24 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
             'last_name',
             'phone_number',
             'password',
-            'preferred_language'
+            'preferred_language',
+            'domain'
         ]
 
     def validate(self, attrs):
-        if not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
-            raise serializers.ValidationError('incorrect_phone_number')
-        if 'email' not in attrs or CustomUser.objects.filter(email=attrs['email']).exists():
-            raise serializers.ValidationError('email_already_exists')
-        if 'phone_number' not in attrs or CustomUser.objects.filter(phone_number=attrs['phone_number']).exists():
-            raise serializers.ValidationError('phone_number_already_exists')
+        if 'email' not in attrs or CustomUser.objects.filter(
+                site__domain=attrs['domain'],
+                email=attrs['email']
+        ).exists():
+            raise serializers.ValidationError(errors.EMAIL_ALREADY_REGISTERED_ON_DOMAIN)
+        if 'phone_number' not in attrs or CustomUser.objects.filter(
+                site__domain=attrs['domain'],
+                phone_number=attrs['phone_number']
+        ).exists():
+            raise serializers.ValidationError(errors.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
+        attrs['site'] = Site.objects.get(domain=attrs.pop('domain'))
         user_attrs = {k: v for k, v in attrs.items() if k != 'inviter_id'}
         user = CustomUser(**user_attrs)
-        password = attrs.get('password')
-        try:
-            validate_password(password, user)
-        except django_exceptions.ValidationError as e:
-            serializer_error = serializers.as_serializer_error(e)
-            raise serializers.ValidationError({
-                'password': serializer_error['non_field_errors']
-            })
         return attrs
 
     def create(self, validated_data):
@@ -212,7 +218,7 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
     def perform_create(self, validated_data):
         with transaction.atomic():
             user = CustomUser.objects.create_user(**validated_data)
-            user.preferred_language = 1
+            user.preferred_language = 'en'
         return user
 
 
@@ -220,6 +226,7 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['otp'] = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+        self.fields['domain'] = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     @classmethod
     def get_token(cls, user):
@@ -229,7 +236,8 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
         authenticate_kwargs = {
             self.username_field: attrs[self.username_field],
             'password': attrs['password'],
-            'otp': attrs.get('otp')
+            'otp': attrs.get('otp'),
+            'domain': attrs.get('domain')
         }
         try:
             authenticate_kwargs['request'] = self.context['request']
