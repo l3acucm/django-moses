@@ -4,3 +4,4 @@ build
 dist
 django_moses.egg-info
 __pycache__
+poetry.lock
