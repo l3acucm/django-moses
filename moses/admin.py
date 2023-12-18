@@ -9,6 +9,7 @@ from .models import CustomUser
 
 class OTPAdminAuthenticationForm(AdminAuthenticationForm):
     otp = forms.CharField(required=False)
+    domain = forms.CharField(required=False)
 
     def clean(self):
         username = self.cleaned_data.get('username')
@@ -16,7 +17,13 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
         otp = self.cleaned_data.get('otp')
 
         if username is not None and password:
-            self.user_cache = authenticate(self.request, username=username, password=password, otp=otp)
+            self.user_cache = authenticate(
+                self.request,
+                username=username,
+                password=password,
+                otp=otp,
+                domain=domain
+            )
             if self.user_cache is None:
                 raise self.get_invalid_login_error()
             else:
