@@ -15,6 +15,7 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
         username = self.cleaned_data.get('username')
         password = self.cleaned_data.get('password')
         otp = self.cleaned_data.get('otp')
+        domain = self.cleaned_data.get('domain')
 
         if username is not None and password:
             self.user_cache = authenticate(
