@@ -27,6 +27,7 @@ class APIClient:
         self.disable_mfa_view = UserViewSet.as_view({'post': 'disable_mfa'})
         self.login_view = TokenObtainPairView.as_view()
         self.reset_password_view = UserViewSet.as_view({'post': 'reset_password'})
+        self.confirm_reset_password_view = UserViewSet.as_view({'post': 'reset_password_confirm'})
         self._namespace = namespace
 
     def create_user(self, phone_number, password, name, email, domain):
@@ -85,14 +86,31 @@ class APIClient:
         response = self.request_phone_number_confirmation_pin_view(request)
         return get_user_model().objects.get(id=user.id), response
 
-    def reset_password(self, phone_number, domain):
+    def reset_password(self, credential, domain):
         request = drf_request_factory.post(
             reverse('moses:customuser-reset-password'),
-            json.dumps({'phone_number': phone_number, 'domain': domain}),
+            json.dumps({'credential': credential, 'domain': domain}),
             content_type='application/json',
         )
         response = self.reset_password_view(request)
         return response
+
+    def confirm_reset_password(self, credential, domain, code, password):
+        request = drf_request_factory.post(
+            reverse('moses:customuser-reset-password-confirm'),
+            json.dumps({
+                'credential': credential,
+                'domain': domain,
+                'code': code,
+                'new_password': password
+            }),
+            content_type='application/json',
+        )
+        user = None
+        response = self.confirm_reset_password_view(request)
+        if response.status_code == 204:
+            user = get_user_model().objects.get(site__domain=domain, phone_number=credential)
+        return user, response
 
     def update_user(self, user, data):
         request = drf_request_factory.patch(

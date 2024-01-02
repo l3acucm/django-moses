@@ -1,6 +1,5 @@
 import random
 import uuid
-from datetime import timedelta
 from enum import Enum
 
 import pyotp as pyotp
@@ -10,6 +9,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
 from django.db import models
 from django.utils import timezone, translation
+from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
 from moses.conf import settings as moses_settings
@@ -29,8 +29,8 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', False)
         extra_fields.setdefault('is_active', True)
         user = self._create_user(phone_number, password, **extra_fields)
-        user.send_phone_number_confirmation_sms(generate_new=True)
-        user.send_email_confirmation_email(generate_new=True)
+        user.send_credential_confirmation_code(Credential.EMAIL, generate_new=True)
+        user.send_credential_confirmation_code(Credential.PHONE_NUMBER, generate_new=True)
         return user
 
     def create_superuser(self, phone_number, password, **extra_fields):
@@ -85,10 +85,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         default=0,
         verbose_name=_("Phone number confirm attempts")
     )
-    last_password_reset_sms_sent_at = models.DateTimeField(
+    password_reset_code_sms_sent_at = models.DateTimeField(
         blank=True,
         null=True,
-        verbose_name=_("Last password reset sms sent at")
+        verbose_name=_("Last password reset code sent at")
+    )
+    password_reset_code = models.PositiveIntegerField(
+        blank=True,
+        null=True
     )
 
     first_name = models.CharField(max_length=200, verbose_name=_("First name"), blank=True)
@@ -106,9 +110,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
 
     mfa_secret_key = models.CharField(blank=True, default='', max_length=160)
-    last_phone_number_confirmation_pin_sent = models.DateTimeField(null=True, blank=True)
-    last_phone_number_candidate_confirmation_pin_sent = models.DateTimeField(null=True, blank=True)
-    userpic = models.ImageField(upload_to='images/userpics/', blank=True, null=True)
+    last_phone_number_confirmation_pins_sent = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD = 'phone_number'
 
@@ -122,37 +124,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         totp = pyotp.totp.TOTP(self.mfa_secret_key.encode('utf-8'))
         return totp.verify(otp)
 
-    def send_phone_number_confirmation_sms(self, generate_new=False):
-        if generate_new or self.phone_number_confirmation_pin == 0:
-            self.phone_number_confirmation_pin = random.randint(0, 999999)
-        self.last_phone_number_confirmation_pin_sent = timezone.now()
-        self.save()
-        with translation.override(self.preferred_language):
-            moses_settings.SEND_SMS_HANDLER(
-                self.phone_number,
-                _("Phone number confirmation PIN: ") + str(self.phone_number_confirmation_pin).zfill(6)
-            )
-
-    def send_phone_number_candidate_confirmation_sms(self, generate_new=False):
-        if not self.phone_number_candidate:
-            return
-        if generate_new or self.phone_number_candidate_confirmation_pin == 0:
-            self.phone_number_candidate_confirmation_pin = random.randint(0, 999999)
-        if (
-                self.last_phone_number_candidate_confirmation_pin_sent is not None and
-                self.last_phone_number_candidate_confirmation_pin_sent > timezone.now() - timedelta(
-            minutes=moses_settings.MINUTES_BETWEEN_CONFIRMATION_PIN_SMS
-        )):
-            return
-        self.last_phone_number_candidate_confirmation_pin_sent = timezone.now()
-        self.save()
-        with translation.override(self.preferred_language):
-            moses_settings.SEND_SMS_HANDLER(
-                self.phone_number_candidate,
-                _("Phone number confirmation PIN: ") + str(
-                    self.phone_number_candidate_confirmation_pin).zfill(
-                    6))
-
     def try_to_confirm_credential(self, credential: Credential, main_pin_str: str, candidate_pin_str: str):
         match credential:
             case Credential.PHONE_NUMBER:
@@ -160,7 +131,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 current_credential_field = 'phone_number'
                 candidate_credential_field = 'phone_number_candidate'
                 current_credential_confirmation_field = 'is_phone_number_confirmed'
-                max_attempts_limit = moses_settings.MAX_PHONE_NUMBER_CONFIRMATION_ATTEMPTS
+                max_attempts_limit = moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
                 current_pin_field = 'phone_number_confirmation_pin'
                 candidate_pin_field = 'phone_number_candidate_confirmation_pin'
             case Credential.EMAIL:
@@ -168,12 +139,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 current_credential_field = 'email'
                 candidate_credential_field = 'email_candidate'
                 current_credential_confirmation_field = 'is_email_confirmed'
-                max_attempts_limit = moses_settings.MAX_EMAIL_CONFIRMATION_ATTEMPTS
+                max_attempts_limit = moses_settings.EMAIL_CONFIRMATION_ATTEMPTS_LIMIT
                 current_pin_field = 'email_confirmation_pin'
                 candidate_pin_field = 'email_candidate_confirmation_pin'
             case _:
                 raise ValueError('invalid_credential')
-        if getattr(self, attempts_field) == max_attempts_limit:
+        if getattr(self, attempts_field) >= max_attempts_limit:
             return False, False
         received_pin, received_candidate_pin = int(main_pin_str or '0'), int(candidate_pin_str or '0')
         is_main_pin_correct = received_pin == getattr(self, current_pin_field)
@@ -194,25 +165,63 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.save()
         return is_main_pin_correct, is_candidate_pin_correct
 
-    def send_email_confirmation_email(self, generate_new=False):
-        if generate_new or self.email_confirmation_pin == 0:
-            self.email_confirmation_pin = random.randint(0, 999999)
-            self.save()
-        with translation.override(self.preferred_language):
-            send_mail(_("Email confirmation PIN"),
-                      _("Your email confirmation PIN is: ") + str(self.email_confirmation_pin),
-                      'noreply@' + moses_settings.DOMAIN, [self.email])
+    def send_credential_confirmation_code(self, credential_type: Credential, candidate=False, generate_new=False):
+        match credential_type:
+            case Credential.PHONE_NUMBER:
+                send_function = moses_settings.SEND_SMS_HANDLER
+                setattr(self, 'last_phone_number_confirmation_pins_sent', now())
+                if candidate:
+                    credential_field = 'phone_number_candidate'
+                    pin_field = 'phone_number_candidate_confirmation_pin'
+                else:
+                    credential_field = 'phone_number'
+                    pin_field = 'phone_number_confirmation_pin'
+            case Credential.EMAIL:
+                def send_email_confirmation_message(email: str, body: str):
+                    send_mail(_("Email confirmation PIN"), body, 'noreply@' + moses_settings.DOMAIN, [email])
 
-    def send_email_candidate_confirmation_email(self, generate_new=False):
-        if not self.email_candidate:
-            return
-        if generate_new or self.email_candidate_confirmation_pin == 0:
-            self.email_candidate_confirmation_pin = random.randint(0, 999999)
-            self.save()
+                send_function = send_email_confirmation_message
+                if candidate:
+                    credential_field = 'email_candidate'
+                    pin_field = 'email_candidate_confirmation_pin'
+                else:
+                    credential_field = 'email'
+                    pin_field = 'email_confirmation_pin'
+            case _:
+                raise ValueError('invalid_credential')
+        if generate_new:
+            setattr(self, pin_field, random.randint(0, 999999))
+        self.save()
         with translation.override(self.preferred_language):
-            send_mail(_("Email confirmation PIN"),
-                      _("Your email confirmation PIN is: ") + str(self.email_candidate_confirmation_pin),
-                      'noreply@' + django_settings.DOMAIN, [self.email_candidate])
+            send_function(getattr(self, credential_field),
+                          _("Your confirmation PIN is: ") + str(getattr(self, pin_field)).zfill(6))
+
+    def send_password_reset_code(self, credential: str) -> bool:
+        self.password_reset_code = random.randint(0, 1000000)
+        self.save()
+        message_body = _(f"Your password reset code is {self.password_reset_code}")
+        match credential:
+            case self.email:
+                if self.is_email_confirmed:
+                    send_mail(_("Password reset"), message_body, 'noreply@' + moses_settings.DOMAIN, [self.email])
+                    return True
+                return False
+            case self.phone_number:
+                sms_limit_reached =  self.password_reset_code_sms_sent_at is not None and (
+                        timezone.now() - self.password_reset_code_sms_sent_at
+                ).minutes < moses_settings.PASSWORD_RESET_SMS_MINUTES_PERIOD
+                if self.is_phone_number_confirmed and not sms_limit_reached:
+                    self.password_reset_code_sms_sent_at = timezone.now()
+                    self.save()
+                    moses_settings.SEND_SMS_HANDLER(self.phone_number, message_body)
+                    return True
+                return False
+            case _:
+                return False
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
+
+
+def generate_sms_code():
+    return random.randint(0, 1000000)
