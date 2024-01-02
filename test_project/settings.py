@@ -52,14 +52,17 @@ TEMPLATES = [
     },
 ]
 MOSES = {
-    "DEFAULT_LANGUAGE": 'en',
-    'MAX_PHONE_NUMBER_CONFIRMATION_ATTEMPTS': 10,
+    "PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT": 4,
+    "EMAIL_CONFIRMATION_ATTEMPTS_LIMIT": 3,
+    "PASSWORD_RESET_SMS_MINUTES_PERIOD": 1,
+    "PASSWORD_RESET_TIMEOUT_MINUTES": 5,
     'MINUTES_BETWEEN_CONFIRMATION_PIN_SMS': 0,
     "SEND_SMS_HANDLER": "test_project.app_for_tests.mocks.send_sms_handler",
     "PHONE_NUMBER_VALIDATOR": "test_project.app_for_tests.mocks.validate_phone_number",
     "DOMAIN": "abc.xyz",
     "URL_PREFIX": "https://abc.xyz",
     "IP_HEADER": "HTTP_CF_CONNECTING_IP" if DEBUG else None,
+    "DEFAULT_LANGUAGE": "en",
     "LANGUAGE_CHOICES": (
         ('en', "English"),
     ),
@@ -74,7 +77,9 @@ DJOSER = {
     'SERIALIZERS': {
         'user_create': 'moses.serializers.CustomUserCreateSerializer',
         'current_user': 'moses.serializers.PrivateCustomUserSerializer',
-        'token_obtain': 'moses.serializers.TokenObtainSerializer'
+        'token_obtain': 'moses.serializers.TokenObtainSerializer',
+        'password_reset': 'moses.serializers.ResetPasswordSerializer',
+        'password_reset_confirm': 'moses.serializers.ConfirmResetPasswordSerializer'
     }
 }
 FIXTURE_DIRS = [

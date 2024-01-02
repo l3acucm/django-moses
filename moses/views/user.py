@@ -6,16 +6,15 @@ import pyotp
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
-from django.contrib.sites.models import Site
 from django.core.mail import send_mail
 from django.db.models import Q
-from django.utils import translation, timezone
+from django.utils import translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 from djoser import signals, utils
 from djoser.compat import get_user_email
 from djoser.conf import settings as djoser_settings
-from djoser.utils import logout_user, encode_uid
+from djoser.utils import logout_user
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -71,24 +70,6 @@ class UserViewSet(viewsets.ModelViewSet):
         ):
             self.permission_classes = djoser_settings.PERMISSIONS.user_delete
         return super().get_permissions()
-
-    def send_password_reset_email(self, user):
-        context = {'user': user}
-        to = [get_user_email(user)]
-        if user.is_email_confirmed:
-            with translation.override(user.preferred_language):
-                djoser_settings.EMAIL.password_reset(self.request, context).send(to)
-        else:
-            raise ValueError(_("Email is not confirmed"))
-
-    def send_password_reset_sms(self, user):
-        url = moses_settings.URL_PREFIX + '/' + djoser_settings.PASSWORD_RESET_CONFIRM_URL.format(
-            token=default_token_generator.make_token(user),
-            uid=encode_uid(user.pk)
-        )
-        moses_settings.SEND_SMS_HANDLER(to=user.phone_number, body=url)
-        user.last_password_reset_sms_sent_at = timezone.now()
-        user.save()
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -216,7 +197,10 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def set_password(self, request, *args, **kwargs):
         if not request.user.check_password(request.data.get('current_password')):
-            return Response({'current_password': [errors.INVALID_PASSWORD]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'current_password': [errors.INVALID_PASSWORD]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
@@ -233,69 +217,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def reset_password(self, request, *args, **kwargs):
-        if not Site.objects.filter(domain=request.data.get('domain')).exists():
-            return Response(
-                {
-                    'domain': [errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST]
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if 'email' in request.data:
-            users = CustomUser.objects.filter(
-                site__domain=request.data['domain'],
-                email=request.data['email']
-            )
-            if not users:
-                return Response(
-                    {
-                        'phone_number': [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN]
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            for user in users:
-                if user.is_email_confirmed:
-                    self.send_password_reset_email(user)
-                else:
-                    return Response(
-                        {
-                            'email': [errors.CREDENTIAL_NOT_CONFIRMED]
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-        if 'phone_number' in request.data:
-            users = CustomUser.objects.filter(
-                site__domain=request.data['domain'],
-                phone_number=request.data['phone_number']
-            )
-            if not users:
-                return Response(
-                    {
-                        'phone_number': [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN]
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            for user in users:
-                if user.is_phone_number_confirmed:
-                    if not user.last_password_reset_sms_sent_at or (
-                            timezone.now() - user.last_password_reset_sms_sent_at
-                    ).days > 0:
-                        self.send_password_reset_sms(user)
-                    else:
-                        return Response(
-                            {
-                                'non_field_errors': [errors.TOO_FREQUENT_SMS_REQUESTS]
-                            },
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                else:
-                    return Response(
-                        {
-                            'phone_number': [errors.CREDENTIAL_NOT_CONFIRMED]
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-        return Response({}, status=status.HTTP_204_NO_CONTENT)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.user.send_password_reset_code(serializer.data["credential"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(["post"], detail=False)
     def reset_password_confirm(self, request, *args, **kwargs):
@@ -421,10 +346,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def request_phone_number_confirmation_pin(self, request):
-        if (now() - request.user.last_phone_number_confirmation_pin_sent).days > 0 and \
-                (now() - request.user.last_phone_number_candidate_confirmation_pin_sent).days > 0:
-            request.user.send_phone_number_confirmation_sms()
-            request.user.send_phone_number_candidate_confirmation_sms()
+        if request.user.last_phone_number_confirmation_pins_sent is None or (
+                now() - request.user.last_phone_number_confirmation_pins_sent).seconds >= 60 * moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD:
+            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER)
+            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True)
             return Response({})
         return Response({'non_field_errors': ['too_frequent_sms_request']}, status=status.HTTP_400_BAD_REQUEST)
 

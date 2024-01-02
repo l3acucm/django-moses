@@ -114,8 +114,7 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
             first_pins)
         self.assertNotIn('+996507030930', utils.SENT_SMS)
         self.assertNotIn('+996507030931', utils.SENT_SMS)
-        self.user.last_phone_number_confirmation_pin_sent -= timedelta(days=1)
-        self.user.last_phone_number_candidate_confirmation_pin_sent -= timedelta(days=1)
+        self.user.last_phone_number_confirmation_pins_sent -= timedelta(minutes=1)
         self.user.save()
 
         self.user, response = test_client.request_phone_number_confirmation_pin(self.user)
