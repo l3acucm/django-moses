@@ -21,7 +21,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from moses import errors
 from moses.conf import settings as moses_settings
-from moses.models import CustomUser, Credential
+from moses.models import CustomUser, Credential, SMSType
 
 
 class PinSerializer(Serializer):
@@ -296,6 +296,10 @@ class ResetPasswordSerializer(serializers.Serializer):
                 Q(phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(email=validated_data['credential'], is_email_confirmed=True),
                 site__domain=validated_data['domain'],
             )
+            if self.user.is_sms_timeout(SMSType.PASSWORD_RESET):
+                raise ValidationError(
+                    {"credential": [errors.TOO_FREQUENT_SMS_REQUESTS]}, code=errors.TOO_FREQUENT_SMS_REQUESTS
+                )
         except (CustomUser.DoesNotExist, ValueError, TypeError, OverflowError):
             key_error = "code_not_found"
             raise ValidationError(

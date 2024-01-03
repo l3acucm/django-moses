@@ -53,9 +53,9 @@ TEMPLATES = [
 ]
 MOSES = {
     "PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT": 4,
-    "EMAIL_CONFIRMATION_ATTEMPTS_LIMIT": 3,
     "PASSWORD_RESET_SMS_MINUTES_PERIOD": 1,
     "PASSWORD_RESET_TIMEOUT_MINUTES": 5,
+    "EMAIL_CONFIRMATION_ATTEMPTS_LIMIT": 3,
     'MINUTES_BETWEEN_CONFIRMATION_PIN_SMS': 0,
     "SEND_SMS_HANDLER": "test_project.app_for_tests.mocks.send_sms_handler",
     "PHONE_NUMBER_VALIDATOR": "test_project.app_for_tests.mocks.validate_phone_number",
