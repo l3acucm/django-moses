@@ -1,6 +1,6 @@
 [project]
 name = "django-moses"
-version = "0.9.3"
+version = "0.10.2"
 dependencies = [
     "djangorestframework-simplejwt = ^5.2.2",
     "djoser = ^2.2.0",
@@ -10,7 +10,7 @@ dependencies = [
 [tool.poetry]
 name = "django-moses"
 description = "Advanced authentication with OTP and phone number verification"
-version = "0.9.3"
+version = "0.10.2"
 authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 packages = [{ include = "moses/**/*", from = "." }]
 

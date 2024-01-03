@@ -42,7 +42,6 @@ class CustomUserAdmin(UserAdmin):
             'fields': (
                 'first_name',
                 'last_name',
-                'userpic',
                 'preferred_language',)
         }),
         ('Contacts', {'fields': (
@@ -58,7 +57,7 @@ class CustomUserAdmin(UserAdmin):
             'phone_number_confirmation_pin',
             'phone_number_candidate_confirmation_pin',
             'phone_number_confirmation_attempts',
-            'last_password_reset_sms_sent_at',
+            'password_reset_code_sms_sent_at',
         )}),
         ('Access', {
             'fields': (

@@ -12,6 +12,7 @@ from django.utils import timezone, translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
+from moses import errors
 from moses.conf import settings as moses_settings
 
 
@@ -46,8 +47,13 @@ class CustomUserManager(BaseUserManager):
 
 
 class Credential(Enum):
-    EMAIL = 'email'
-    PHONE_NUMBER = 'phone_number'
+    EMAIL = 1
+    PHONE_NUMBER = 2
+
+
+class SMSType(Enum):
+    PASSWORD_RESET = 1
+    PHONE_NUMBER_CONFIRMATION = 2
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -89,6 +95,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         null=True,
         verbose_name=_("Last password reset code sent at")
+    )
+    phone_number_confirmation_code_sms_sent_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_("Last phone number confirmation code sent at")
     )
     password_reset_code = models.PositiveIntegerField(
         blank=True,
@@ -169,13 +180,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         match credential_type:
             case Credential.PHONE_NUMBER:
                 send_function = moses_settings.SEND_SMS_HANDLER
-                setattr(self, 'last_phone_number_confirmation_pins_sent', now())
+                if not self.is_sms_timeout(SMSType.PHONE_NUMBER_CONFIRMATION):
+                    setattr(self, 'last_phone_number_confirmation_pins_sent', now())
                 if candidate:
                     credential_field = 'phone_number_candidate'
                     pin_field = 'phone_number_candidate_confirmation_pin'
                 else:
                     credential_field = 'phone_number'
                     pin_field = 'phone_number_confirmation_pin'
+                is_attempts_limit_reached = self.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
             case Credential.EMAIL:
                 def send_email_confirmation_message(email: str, body: str):
                     send_mail(_("Email confirmation PIN"), body, 'noreply@' + moses_settings.DOMAIN, [email])
@@ -187,8 +200,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 else:
                     credential_field = 'email'
                     pin_field = 'email_confirmation_pin'
+
+                is_attempts_limit_reached = self.email_confirmation_attempts >= moses_settings.EMAIL_CONFIRMATION_ATTEMPTS_LIMIT
             case _:
                 raise ValueError('invalid_credential')
+        if is_attempts_limit_reached:
+            raise ValueError('attempts_limit_reached')
+        if self.is_sms_timeout(SMSType.PHONE_NUMBER_CONFIRMATION):
+            raise ValueError('sms_timeout')
         if generate_new:
             setattr(self, pin_field, random.randint(0, 999999))
         self.save()
@@ -196,7 +215,21 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             send_function(getattr(self, credential_field),
                           _("Your confirmation PIN is: ") + str(getattr(self, pin_field)).zfill(6))
 
+    def is_sms_timeout(self, sms_type: SMSType):
+        match sms_type:
+            case SMSType.PASSWORD_RESET:
+                timeout_in_minutes = moses_settings.PASSWORD_RESET_SMS_MINUTES_PERIOD
+                last_sms_sent = self.password_reset_code_sms_sent_at
+            case SMSType.PHONE_NUMBER_CONFIRMATION:
+                timeout_in_minutes = moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD
+                last_sms_sent = self.phone_number_confirmation_code_sms_sent_at
+            case _:
+                raise ValueError('invalid_sms_type')
+        return last_sms_sent is not None and (timezone.now() - last_sms_sent).seconds < 60 * timeout_in_minutes
+
     def send_password_reset_code(self, credential: str) -> bool:
+        if self.is_sms_timeout(SMSType.PASSWORD_RESET):
+            raise ValueError('sms_timeout')
         self.password_reset_code = random.randint(0, 1000000)
         self.save()
         message_body = _(f"Your password reset code is {self.password_reset_code}")
@@ -207,14 +240,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                     return True
                 return False
             case self.phone_number:
-                sms_limit_reached =  self.password_reset_code_sms_sent_at is not None and (
-                        timezone.now() - self.password_reset_code_sms_sent_at
-                ).minutes < moses_settings.PASSWORD_RESET_SMS_MINUTES_PERIOD
-                if self.is_phone_number_confirmed and not sms_limit_reached:
-                    self.password_reset_code_sms_sent_at = timezone.now()
-                    self.save()
-                    moses_settings.SEND_SMS_HANDLER(self.phone_number, message_body)
-                    return True
+                if self.is_phone_number_confirmed:
+                    if not self.is_sms_timeout(SMSType.PASSWORD_RESET):
+                        self.password_reset_code_sms_sent_at = timezone.now()
+                        self.save()
+                        moses_settings.SEND_SMS_HANDLER(self.phone_number, message_body)
+                        return True
+                    else:
+                        raise TimeoutError(errors.TOO_FREQUENT_SMS_REQUESTS)
                 return False
             case _:
                 return False
