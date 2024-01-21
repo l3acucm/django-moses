@@ -127,6 +127,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     objects = CustomUserManager()
 
+    @property
+    def mfa_url(self):
+        return pyotp.totp.TOTP(
+                    self.mfa_secret_key.encode('utf-8')
+                ).provisioning_uri(
+                    f"{self.first_name} {self.last_name}",
+                    moses_settings.DOMAIN
+                )
+
     def check_mfa_otp(self, otp):
         if self.is_superuser and not django_settings.DEBUG and not self.mfa_secret_key:
             return False
