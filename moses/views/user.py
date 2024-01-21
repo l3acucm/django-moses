@@ -65,6 +65,8 @@ class UserViewSet(viewsets.ModelViewSet):
             self.permission_classes = djoser_settings.PERMISSIONS.password_reset_confirm
         elif self.action == "set_password":
             self.permission_classes = djoser_settings.PERMISSIONS.set_password
+        elif self.action in ("mfa_status", "credential_availability"):
+            self.permission_classes = []
         elif self.action == "destroy" or (
                 self.action == "me" and self.request and self.request.method == "DELETE"
         ):
@@ -194,6 +196,27 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(["get"], detail=False)
+    def credential_availability(self, request):
+        kwargs = {'site__domain': request.GET.get('domain')}
+        if (email := request.GET.get('email')) is not None:
+            kwargs['email'] = email
+        elif (phone_number := request.GET.get('phone_number')) is not None:
+            kwargs['phone_number'] = phone_number
+        return Response(
+            {
+                'result': not CustomUser.objects.filter(**kwargs).exists()
+            },
+            status=status.HTTP_200_OK
+        )
+
+    @action(["get"], detail=False)
+    def mfa_status(self, request):
+        u_qs = CustomUser.objects.filter(phone_number=request.GET.get('phone_number'), site__domain=request.GET.get('domain'))
+        result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
+        print('resulT: ' + str(request.GET['phone_number']))
+        return Response({'result': result}, status=status.HTTP_200_OK)
+
     @action(["post"], detail=False)
     def set_password(self, request, *args, **kwargs):
         if not request.user.check_password(request.data.get('current_password')):
@@ -295,24 +318,6 @@ class UserViewSet(viewsets.ModelViewSet):
                 )
             }
         )
-
-    @action(["get"], detail=False)
-    def check_is_email_available(self, request):
-        return Response(
-            {
-                'result': not CustomUser.objects.filter(
-                    site__domain=request.GET.get('domain'),
-                    email=request.GET.get('email')
-                ).exists()
-            },
-            status=status.HTTP_200_OK
-        )
-
-    @action(["get"], detail=False)
-    def check_is_mfa_enabled(self, request):
-        u_qs = CustomUser.objects.filter(phone_number=request.GET.get('phone_number'))
-        result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
-        return Response({'result': result}, status=status.HTTP_200_OK)
 
     @action(["post"], detail=False)
     def enable_mfa(self, request):

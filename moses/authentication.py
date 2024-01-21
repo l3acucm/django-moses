@@ -101,7 +101,6 @@ class JWTAuthentication(authentication.BaseAuthentication):
                 messages.append({'token_class': AuthToken.__name__,
                                  'token_type': AuthToken.token_type,
                                  'message': e.args[0]})
-
         raise InvalidToken({
             'detail': _('Given token not valid for any token type'),
             'messages': messages,

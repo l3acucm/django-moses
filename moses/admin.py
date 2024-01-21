@@ -43,6 +43,10 @@ class CustomUserAdmin(UserAdmin):
                 'first_name',
                 'last_name',
                 'preferred_language',)
+        }),('Site', {
+            'fields': (
+                'site',
+                )
         }),
         ('Contacts', {'fields': (
             'email',
@@ -65,18 +69,18 @@ class CustomUserAdmin(UserAdmin):
                 'is_staff'
             ),
         }),
-        ('Security', {'fields': ('password', 'mfa_secret_key')}),
+        ('Security', {'fields': ('password', 'mfa_secret_key', 'mfa_url')}),
     )
     add_fieldsets = (
         (None, {
-            'classes': ('wide',),
+            'classes': ('wide', ),
             'fields': ('phone_number', 'email', 'password1', 'password2'),
         }),
     )
 
     list_display = (
         'id', 'first_name', 'last_name', 'phone_number', 'email', 'created_at')
-
+    readonly_fields = ('mfa_url', )
     ordering = ('-created_at',)
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('phone_number', 'first_name', 'last_name', 'email', 'id')
