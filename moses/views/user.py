@@ -214,7 +214,6 @@ class UserViewSet(viewsets.ModelViewSet):
     def mfa_status(self, request):
         u_qs = CustomUser.objects.filter(phone_number=request.GET.get('phone_number'), site__domain=request.GET.get('domain'))
         result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
-        print('resulT: ' + str(request.GET['phone_number']))
         return Response({'result': result}, status=status.HTTP_200_OK)
 
     @action(["post"], detail=False)
