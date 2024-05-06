@@ -227,7 +227,9 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
 
     def perform_create(self, validated_data):
         with transaction.atomic():
-            user = CustomUser.objects.create_user(preferred_language=moses_settings.DEFAULT_LANGUAGE, **validated_data)
+            if 'preferred_language' not in validated_data:
+                validated_data['preferred_language'] = moses_settings.DEFAULT_LANGUAGE
+            user = CustomUser.objects.create_user(**validated_data)
         return user
 
 

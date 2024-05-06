@@ -27,6 +27,7 @@ default_settings = {
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "DOMAIN": None,
+    "SENDER_EMAIL": None,
     "URL_PREFIX": None,
     "IP_HEADER": None,
     "PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT": 3,

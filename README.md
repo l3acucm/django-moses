@@ -47,6 +47,7 @@ Quick start
     MOSES = {
         "DEFAULT_LANGUAGE": 'en',
         "SEND_SMS_HANDLER": "project.common.sms.send",
+        "SENDER_EMAIL": "noreply@example.com",
         "PHONE_NUMBER_VALIDATOR": "project.common.sms.validate_phone_number",
         "DOMAIN": DOMAIN,
         "URL_PREFIX": "http://localhost:8000", # without trailing slash

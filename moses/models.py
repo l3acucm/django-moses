@@ -200,7 +200,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 is_attempts_limit_reached = self.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
             case Credential.EMAIL:
                 def send_email_confirmation_message(email: str, body: str):
-                    send_mail(_("Email confirmation PIN"), body, 'noreply@' + moses_settings.DOMAIN, [email])
+                    send_mail(_("Email confirmation PIN"), body, moses_settings.SENDER_EMAIL, [email])
 
                 send_function = send_email_confirmation_message
                 if candidate:
@@ -245,7 +245,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         match credential:
             case self.email:
                 if self.is_email_confirmed:
-                    send_mail(_("Password reset"), message_body, 'noreply@' + moses_settings.DOMAIN, [self.email])
+                    send_mail(_("Password reset"), message_body, moses_settings.SENDER_EMAIL, [self.email])
                     return True
                 return False
             case self.phone_number:
