@@ -213,6 +213,9 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
                 phone_number=attrs['phone_number']
         ).exists():
             raise serializers.ValidationError(errors.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
+        elif not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
+            raise serializers.ValidationError(errors.INVALID_PHONE_NUMBER)
+
         attrs['site'] = Site.objects.get(domain=attrs.pop('domain'))
         user_attrs = {k: v for k, v in attrs.items() if k != 'inviter_id'}
         user = CustomUser(**user_attrs)
