@@ -12,7 +12,8 @@ from django.utils import timezone, translation
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 
-from moses import errors
+from moses.common import error_codes
+from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
 
 
@@ -130,11 +131,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def mfa_url(self):
         return pyotp.totp.TOTP(
-                    self.mfa_secret_key.encode('utf-8')
-                ).provisioning_uri(
-                    f"{self.first_name} {self.last_name}",
-                    moses_settings.DOMAIN
-                )
+            self.mfa_secret_key.encode('utf-8')
+        ).provisioning_uri(
+            f"{self.first_name} {self.last_name}",
+            moses_settings.DOMAIN
+        )
 
     def check_mfa_otp(self, otp):
         if self.is_superuser and not django_settings.DEBUG and not self.mfa_secret_key:
@@ -163,7 +164,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 current_pin_field = 'email_confirmation_pin'
                 candidate_pin_field = 'email_candidate_confirmation_pin'
             case _:
-                raise ValueError('invalid_credential')
+                raise ValueError(error_codes.INVALID_CREDENTIAL)
         if getattr(self, attempts_field) >= max_attempts_limit:
             return False, False
         received_pin, received_candidate_pin = int(main_pin_str or '0'), int(candidate_pin_str or '0')
@@ -212,11 +213,24 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
                 is_attempts_limit_reached = self.email_confirmation_attempts >= moses_settings.EMAIL_CONFIRMATION_ATTEMPTS_LIMIT
             case _:
-                raise ValueError('invalid_credential')
+                raise ValueError(error_codes.INVALID_CREDENTIAL_TYPE)
         if is_attempts_limit_reached:
-            raise ValueError('attempts_limit_reached')
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(
+                            code=error_codes.ATTEMPTS_LIMIT_REACHED)
+                    ]
+                }
+            )
         if self.is_sms_timeout(SMSType.PHONE_NUMBER_CONFIRMATION):
-            raise ValueError('sms_timeout')
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(code=error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                    ]
+                }
+            )
         if generate_new:
             setattr(self, pin_field, random.randint(0, 999999))
         self.save()
@@ -238,7 +252,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def send_password_reset_code(self, credential: str) -> bool:
         if self.is_sms_timeout(SMSType.PASSWORD_RESET):
-            raise ValueError('sms_timeout')
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(
+                            kwargs={},
+                            code=error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                    ]
+                }
+            )
         self.password_reset_code = random.randint(0, 1000000)
         self.save()
         message_body = _(f"Your password reset code is {self.password_reset_code}")
@@ -256,7 +278,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                         moses_settings.SEND_SMS_HANDLER(self.phone_number, message_body)
                         return True
                     else:
-                        raise TimeoutError(errors.TOO_FREQUENT_SMS_REQUESTS)
+                        raise CustomAPIException(
+                            {
+                                '': [
+                                    KwargsError(
+                                        kwargs={},
+                                        code=error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                                ]
+                            }
+                        )
                 return False
             case _:
                 return False

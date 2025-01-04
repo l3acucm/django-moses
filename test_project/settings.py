@@ -85,6 +85,12 @@ DJOSER = {
 FIXTURE_DIRS = [
     'test_project/app_for_tests/fixtures'
 ]
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'moses.common.renderers.CustomJSONRenderer',
+    ],
+    'EXCEPTION_HANDLER': 'moses.common.exception_handlers.custom_exception_handler',
+}
 if MACOS:
     GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
     GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'

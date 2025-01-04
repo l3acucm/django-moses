@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from moses import errors
+from moses.common import error_codes
 from moses.models import CustomUser
 from test_project.app_for_tests import APIClient, utils
 
@@ -21,9 +21,10 @@ class ResetPasswordTestCase(TestCase):
             'not.exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['credential'],
-                         [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN])
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(
+            response.data['errors']['credential'][0]['error_code'],
+            error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN
+        )
         self.assertNotIn('+0', utils.SENT_SMS)
 
     def test_cannot_reset_password_on_site_that_not_registered_on(self):
@@ -32,9 +33,8 @@ class ResetPasswordTestCase(TestCase):
             'exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['credential'],
-                         [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN])
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['errors']['credential'][0]['error_code'],
+                         error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
         self.assertNotIn('+0', utils.SENT_SMS)
 
     def test_can_reset_password_on_site_that_registered_on(self):
@@ -73,5 +73,5 @@ class ResetPasswordTestCase(TestCase):
             'exists2.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['credential'],
-                         [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN])
+        self.assertEqual(response.data['errors']['credential'][0]['error_code'],
+                         error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)

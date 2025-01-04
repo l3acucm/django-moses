@@ -20,7 +20,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
-from moses import errors
+from moses.common import error_codes
+from moses.common.exceptions import KwargsError, CustomAPIException
 from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
 from moses.models import CustomUser, Credential
@@ -219,10 +220,11 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def set_password(self, request, *args, **kwargs):
         if not request.user.check_password(request.data.get('current_password')):
-            return Response(
-                {'current_password': [errors.INVALID_PASSWORD]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise CustomAPIException({
+                'current_password': [
+                    KwargsError(error_codes.INVALID_PASSWORD)
+                ]
+            })
 
         self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
@@ -295,7 +297,11 @@ class UserViewSet(viewsets.ModelViewSet):
         if user:
             return Response(ShortCustomUserSerializer(user).data)
         else:
-            return Response({'non_field_errors': ['user_not_found']}, status=status.HTTP_404_NOT_FOUND)
+            raise CustomAPIException({
+                '': [
+                    KwargsError(error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                ]
+            }, status_code=status.HTTP_404_NOT_FOUND)
 
     @action(["get"], detail=False)
     def get_user_roles(self, request):
@@ -330,12 +336,11 @@ class UserViewSet(viewsets.ModelViewSet):
                     'success': 'mfa has been successfully disabled'
                 }
             )
-        return Response(
-            {
-                'non_field_errors': ['invalid_otp']
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        raise CustomAPIException({
+            'otp': [
+                KwargsError(error_codes.INVALID_OTP)
+            ]
+        })
 
     @otp_required
     @action(["post"], detail=False)
@@ -355,7 +360,11 @@ class UserViewSet(viewsets.ModelViewSet):
             request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER)
             request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True)
             return Response({})
-        return Response({'non_field_errors': ['too_frequent_sms_request']}, status=status.HTTP_400_BAD_REQUEST)
+        raise CustomAPIException({
+                '': [
+                    KwargsError(error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                ]
+            }, status_code=status.HTTP_404_NOT_FOUND)
 
     @action(["post"], detail=False)
     def request_email_confirmation_pin(self, request):
@@ -383,10 +392,10 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'result': 'ok'})
         result = {}
         if confirmation_result[0] == False:
-            result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+            result['pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
         if confirmation_result[1] == False:
-            result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-        return Response(result, status.HTTP_400_BAD_REQUEST)
+            result['candidate_pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+        raise CustomAPIException(result)
 
     @action(["post"], detail=False)
     def confirm_phone_number(self, request):
@@ -412,8 +421,8 @@ class UserViewSet(viewsets.ModelViewSet):
             )
         else:
             result = dict()
-            if not confirmation_result[0]:
-                result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-            if not confirmation_result[1] and confirmation_result[1] is not None:
-                result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-            return Response(result, status=400)
+            if confirmation_result[0] == False:
+                result['pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+            if confirmation_result[1] == False:
+                result['candidate_pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+            raise CustomAPIException(result)

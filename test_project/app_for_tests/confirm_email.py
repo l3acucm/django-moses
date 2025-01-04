@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from moses import errors
+from moses.common import error_codes
 from moses.models import CustomUser
 from test_project.app_for_tests import APIClient
 from test_project.app_for_tests.utils import get_random_pin_non_equal_to
@@ -23,8 +23,7 @@ class LoginTestCase(TestCase):
             get_random_pin_non_equal_to(self.user1.email_candidate_confirmation_pin)
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.assertEqual(self.user1.email_candidate, 'bar@foo.com')
         self.assertEqual(self.user1.email, 'foo@foo.com')
         self.assertFalse(self.user1.is_email_confirmed)
@@ -46,8 +45,8 @@ class LoginTestCase(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
-        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.assertEqual(self.user2.email_candidate, 'bar@foo.com')
         self.assertEqual(self.user2.email, 'foo@foo.com')
         self.assertTrue(self.user2.is_email_confirmed)
@@ -57,8 +56,7 @@ class LoginTestCase(TestCase):
             self.user2.email_candidate_confirmation_pin
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.assertEqual(self.user2.email_candidate, 'bar@foo.com')
         self.assertEqual(self.user2.email, 'foo@foo.com')
         self.assertTrue(self.user2.is_email_confirmed)

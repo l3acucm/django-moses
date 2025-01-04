@@ -4,7 +4,7 @@ import pyotp
 from django.contrib.sites.models import Site
 from django.test import TestCase
 
-from moses import errors
+from moses.common import error_codes
 from moses.models import CustomUser
 from moses.views.user import UserViewSet
 from test_project.app_for_tests import APIClient
@@ -54,25 +54,22 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
             utils.get_random_pin_non_equal_to(utils.SENT_SMS['+996507030928'])
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
-        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.user, response = test_client.confirm_phone_number(
             self.user,
             utils.get_random_pin_non_equal_to(utils.SENT_SMS['+996507030927']),
             utils.SENT_SMS['+996507030928']
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data['pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.user, response = test_client.confirm_phone_number(
             self.user,
             utils.SENT_SMS['+996507030927'],
             utils.get_random_pin_non_equal_to(utils.SENT_SMS['+996507030928'])
         )
-        self.assertEqual(len(response.data), 1)
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['candidate_pin'], [errors.INCORRECT_CONFIRMATION_PIN])
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
         self.user, response = test_client.confirm_phone_number(
             self.user,
             utils.SENT_SMS['+996507030927'],
