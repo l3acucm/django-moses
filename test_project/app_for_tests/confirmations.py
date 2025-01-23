@@ -3,6 +3,7 @@ from datetime import timedelta
 import pyotp
 from django.contrib.sites.models import Site
 from django.test import TestCase
+from django.utils.timezone import now
 
 from moses.common import error_codes
 from moses.models import CustomUser
@@ -35,6 +36,18 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertFalse(self.user.is_phone_number_confirmed)
+        self.user.phone_number_confirmation_code_sms_unlocks_at = now() - timedelta(days=1)
+        self.user.save()
+        response = test_client.get_sms_unlock_time('phone_number_confirmation', self.user.phone_number,
+                                                   self.user.site.domain)
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(response.data['unlocks_at'], now())
+        self.user, response = test_client.request_phone_number_confirmation_pin(self.user)
+        self.assertEqual(response.status_code, 200)
+        response = test_client.get_sms_unlock_time('phone_number_confirmation', self.user.phone_number,
+                                                   self.user.site.domain)
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(response.data['unlocks_at'], now())
 
         self.user, response = test_client.confirm_phone_number(self.user, utils.SENT_SMS['+996507030927'])
         self.assertTrue(self.user.is_phone_number_confirmed)
@@ -42,6 +55,7 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         self.assertEqual(self.user.phone_number_candidate_confirmation_pin, 0)
 
         self.user, response = test_client.update_user(self.user, {'phone_number': '+996507030928'})
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(CustomUser.objects.count(), 1)
         self.assertNotEqual(self.user.phone_number_candidate_confirmation_pin, 0)
         self.assertEqual(self.user.phone_number_candidate, '+996507030928')
@@ -55,7 +69,8 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['errors']['pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
-        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'],
+                         error_codes.INCORRECT_CONFIRMATION_PIN)
         self.user, response = test_client.confirm_phone_number(
             self.user,
             utils.get_random_pin_non_equal_to(utils.SENT_SMS['+996507030927']),
@@ -69,7 +84,8 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
             utils.get_random_pin_non_equal_to(utils.SENT_SMS['+996507030928'])
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'], error_codes.INCORRECT_CONFIRMATION_PIN)
+        self.assertEqual(response.data['errors']['candidate_pin'][0]['error_code'],
+                         error_codes.INCORRECT_CONFIRMATION_PIN)
         self.user, response = test_client.confirm_phone_number(
             self.user,
             utils.SENT_SMS['+996507030927'],
@@ -105,18 +121,24 @@ class PhoneNumberAndEmailConfirmationTestCase(TestCase):
         del utils.SENT_SMS['+996507030931']
         self.assertNotIn('+996507030930', utils.SENT_SMS)
         self.assertNotIn('+996507030931', utils.SENT_SMS)
+
         self.user, response = test_client.request_phone_number_confirmation_pin(self.user)
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(
             (self.user.phone_number_confirmation_pin, self.user.phone_number_candidate_confirmation_pin),
             first_pins)
         self.assertNotIn('+996507030930', utils.SENT_SMS)
         self.assertNotIn('+996507030931', utils.SENT_SMS)
-        self.user.last_phone_number_confirmation_pins_sent -= timedelta(minutes=1)
+        self.user.phone_number_confirmation_code_sms_unlocks_at -= timedelta(days=1)
+        self.user.phone_number_candidate_confirmation_code_sms_unlocks_at -= timedelta(days=1)
         self.user.save()
 
         self.user, response = test_client.request_phone_number_confirmation_pin(self.user)
         self.assertEqual(
-            (self.user.phone_number_confirmation_pin, self.user.phone_number_candidate_confirmation_pin),
+            (
+                self.user.phone_number_confirmation_pin,
+                self.user.phone_number_candidate_confirmation_pin
+            ),
             first_pins)
         self.assertIn('+996507030930', utils.SENT_SMS)
         self.assertIn('+996507030931', utils.SENT_SMS)

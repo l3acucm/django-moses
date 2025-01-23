@@ -18,14 +18,18 @@ from djoser.utils import logout_user
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from moses.common import error_codes
 from moses.common.exceptions import KwargsError, CustomAPIException
 from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
-from moses.models import CustomUser, Credential
+from moses.enums import Credential
+from moses.models import CustomUser
 from moses.serializers import ShortCustomUserSerializer
+from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
+from moses.services.reset_password import send_password_reset_code
 
 User = get_user_model()
 
@@ -66,7 +70,7 @@ class UserViewSet(viewsets.ModelViewSet):
             self.permission_classes = djoser_settings.PERMISSIONS.password_reset_confirm
         elif self.action == "set_password":
             self.permission_classes = djoser_settings.PERMISSIONS.set_password
-        elif self.action in ("mfa_status", "credential_availability"):
+        elif self.action in ("mfa_status", "credential_availability", "sms_unlock_time"):
             self.permission_classes = []
         elif self.action == "destroy" or (
                 self.action == "me" and self.request and self.request.method == "DELETE"
@@ -134,7 +138,6 @@ class UserViewSet(viewsets.ModelViewSet):
         signals.user_updated.send(
             sender=self.__class__, user=user, request=self.request
         )
-
         # should we send activation email after update?
         if djoser_settings.SEND_ACTIVATION_EMAIL and not user.is_active:
             context = {"user": user}
@@ -213,7 +216,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["get"], detail=False)
     def mfa_status(self, request):
-        u_qs = CustomUser.objects.filter(phone_number=request.GET.get('phone_number'), site__domain=request.GET.get('domain'))
+        u_qs = CustomUser.objects.filter(
+            phone_number=request.GET.get('phone_number'),
+            site__domain=request.GET.get('domain')
+        )
         result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
         return Response({'result': result}, status=status.HTTP_200_OK)
 
@@ -243,7 +249,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def reset_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.user.send_password_reset_code(serializer.data["credential"])
+        send_password_reset_code(serializer.user, serializer.data["credential"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(["post"], detail=False)
@@ -353,18 +359,47 @@ class UserViewSet(viewsets.ModelViewSet):
             }
         )
 
-    @action(["post"], detail=False)
-    def request_phone_number_confirmation_pin(self, request):
-        if request.user.last_phone_number_confirmation_pins_sent is None or (
-                now() - request.user.last_phone_number_confirmation_pins_sent).seconds >= 60 * moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD:
-            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER)
-            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True)
-            return Response({})
-        raise CustomAPIException({
+    @action(["get"], detail=False)
+    def sms_unlock_time(self, request):
+        if (sms_type := request.query_params.get('sms_type')) not in (
+                'password_reset',
+                'phone_number_confirmation'
+        ):
+            raise CustomAPIException({
                 '': [
-                    KwargsError(error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                    KwargsError(error_codes.INVALID_SMS_TYPE)
                 ]
             }, status_code=status.HTTP_404_NOT_FOUND)
+        if (candidate:=('candidate' in request.query_params)) in request.query_params:
+            user = get_object_or_404(
+                CustomUser,
+                phone_number_candidate=request.query_params.get('phone_number'),
+                site__domain=request.query_params.get('domain')
+            )
+        else:
+            user = get_object_or_404(
+                CustomUser,
+                phone_number=request.query_params.get('phone_number'),
+                site__domain=request.query_params.get('domain')
+            )
+        if sms_type == 'password_reset':
+            sms_unlocks_at = user.password_reset_code_sms_unlocks_at
+        else:
+            if candidate:
+                sms_unlocks_at = user.phone_number_candidate_confirmation_code_sms_unlocks_at
+            else:
+                sms_unlocks_at = user.phone_number_confirmation_code_sms_unlocks_at
+
+
+        return Response({
+            'unlocks_at': sms_unlocks_at
+        })
+
+    @action(["post"], detail=False)
+    def request_phone_number_confirmation_pin(self, request):
+        send_credential_confirmation_code(request.user, Credential.PHONE_NUMBER)
+        send_credential_confirmation_code(request.user, Credential.PHONE_NUMBER, candidate=True)
+        return Response({})
 
     @action(["post"], detail=False)
     def request_email_confirmation_pin(self, request):
@@ -375,7 +410,8 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def confirm_email(self, request):
         candidate_email = request.user.email_candidate
-        confirmation_result = request.user.try_to_confirm_credential(
+        confirmation_result = try_to_confirm_credential(
+            request.user,
             Credential.EMAIL,
             request.data.get('pin', ''),
             request.data.get('candidate_pin', '')
@@ -400,7 +436,8 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def confirm_phone_number(self, request):
         candidate_phone_number = request.user.phone_number_candidate
-        confirmation_result = request.user.try_to_confirm_credential(
+        confirmation_result = try_to_confirm_credential(
+            request.user,
             Credential.PHONE_NUMBER,
             request.data.get('pin', ''),
             request.data.get('candidate_pin', '')

@@ -32,7 +32,6 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
 
         return self.cleaned_data
 
-
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
 
@@ -74,7 +73,7 @@ class CustomUserAdmin(UserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide', ),
-            'fields': ('phone_number', 'email', 'password1', 'password2'),
+            'fields': ('phone_number', 'email', 'password1', 'password2', 'site'),
         }),
     )
 

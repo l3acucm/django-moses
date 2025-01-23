@@ -6,7 +6,7 @@ from django.test import Client
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
-
+from urllib.parse import urlencode
 client = Client()
 
 drf_request_factory = APIRequestFactory()
@@ -27,6 +27,7 @@ class APIClient:
         self.disable_mfa_view = UserViewSet.as_view({'post': 'disable_mfa'})
         self.login_view = TokenObtainPairView.as_view()
         self.reset_password_view = UserViewSet.as_view({'post': 'reset_password'})
+        self.get_sms_unlock_time_view = UserViewSet.as_view({'get': 'sms_unlock_time'})
         self.confirm_reset_password_view = UserViewSet.as_view({'post': 'reset_password_confirm'})
         self._namespace = namespace
 
@@ -77,9 +78,7 @@ class APIClient:
     def request_phone_number_confirmation_pin(self, user):
         request = drf_request_factory.post(
             reverse('moses:customuser-request-phone-number-confirmation-pin'),
-            json.dumps({
-            }
-            ),
+            json.dumps({}),
             content_type='application/json',
         )
         force_authenticate(request, user)
@@ -95,6 +94,21 @@ class APIClient:
         response = self.reset_password_view(request)
         return response
 
+    def get_sms_unlock_time(self, sms_type, phone_number, domain, candidate=None):
+        qp = {
+            'sms_type': sms_type,
+            'phone_number': phone_number,
+            'domain': domain,
+        }
+        if candidate is not None:
+            qp['candidate'] = 1
+        request = drf_request_factory.get(
+            reverse('moses:customuser-sms-unlock-time') + '?' + urlencode(qp),
+            content_type='application/json',
+        )
+        response = self.get_sms_unlock_time_view(request)
+        return response
+
     def confirm_reset_password(self, credential, domain, code, password):
         request = drf_request_factory.post(
             reverse('moses:customuser-reset-password-confirm'),
@@ -106,10 +120,8 @@ class APIClient:
             }),
             content_type='application/json',
         )
-        user = None
         response = self.confirm_reset_password_view(request)
-        if response.status_code == 204:
-            user = get_user_model().objects.get(site__domain=domain, phone_number=credential)
+        user = get_user_model().objects.get(site__domain=domain, phone_number=credential)
         return user, response
 
     def update_user(self, user, data):

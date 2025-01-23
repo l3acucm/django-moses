@@ -5,8 +5,8 @@ class CustomJSONRenderer(JSONRenderer):
         response_data = {"errors": {}, "data": {}}
         if renderer_context:
             response = renderer_context["response"]
-            if response.status_code >= 400:
-                response_data["errors"] = data
-            else:
+            if response.status_code < 300:
                 response_data["data"] = data
+            else:
+                response_data = data
         return super().render(response_data, accepted_media_type, renderer_context)

@@ -4,6 +4,8 @@ from django.utils.translation import gettext as _
 from rest_framework import status
 from rest_framework.response import Response
 
+from moses.services.mfa import check_mfa_otp
+
 
 def request_passes_test(test_func):
     def decorator(view_func):
@@ -22,7 +24,7 @@ def otp_required(function=None):
     to the log-in page if necessary.
     """
     actual_decorator = request_passes_test(
-        lambda request: request.user.check_mfa_otp(request.headers.get('OTP')),
+        lambda request: check_mfa_otp(request.user, request.headers.get('OTP')),
     )
     if function:
         return actual_decorator(function)

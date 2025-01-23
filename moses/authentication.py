@@ -1,16 +1,16 @@
 import logging
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.utils.translation import gettext as _
-
 from rest_framework import HTTP_HEADER_ENCODING, authentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed, TokenError, InvalidToken
 from rest_framework_simplejwt.models import TokenUser
 from rest_framework_simplejwt.settings import api_settings
 
 from moses.models import CustomUser
-from django.conf import settings
+from moses.services.mfa import check_mfa_otp
 
 AUTH_HEADER_TYPES = api_settings.AUTH_HEADER_TYPES
 
@@ -21,7 +21,6 @@ AUTH_HEADER_TYPE_BYTES = set(
     h.encode(HTTP_HEADER_ENCODING)
     for h in AUTH_HEADER_TYPES
 )
-
 
 UserModel = get_user_model()
 
@@ -147,13 +146,13 @@ class MFAModelBackend:
         try:
             user = UserModel.objects.get(phone_number=username, site__domain=domain)
         except UserModel.DoesNotExist:
-            # Run the default password hasher once to reduce the timing
-            # difference between an existing and a nonexistent user (#20760).
             UserModel().set_password(password)
         else:
-            success = (user.check_password(password) and
-                       user.check_mfa_otp(kwargs.get('otp')) and
-                       self.user_can_authenticate(user))
+            success = (
+                    user.check_password(password) and
+                    check_mfa_otp(user, kwargs.get('otp')) and
+                    self.user_can_authenticate(user)
+            )
 
             extra_fields = {
                 "ip": kwargs.get('ip'),

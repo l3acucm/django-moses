@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
@@ -8,8 +6,6 @@ from django.core import exceptions as django_exceptions
 from django.core.validators import EmailValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.utils import timezone
-from django.utils.translation import gettext as _
 from djoser import constants
 from rest_framework import serializers, status
 from rest_framework.fields import CharField
@@ -21,7 +17,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from moses.common import error_codes
 from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
-from moses.models import CustomUser, Credential, SMSType
+from moses.enums import Credential
+from moses.models import CustomUser
+from moses.services.credentials_confirmation import send_credential_confirmation_code
 
 
 class PinSerializer(Serializer):
@@ -95,63 +93,70 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
     def get_is_mfa_enabled(self, obj):
         return len(obj.mfa_secret_key) > 0
 
-    def update(self, instance, validated_data):
+    def update(self, user, validated_data):
         raise_errors_on_nested_writes('update', self, validated_data)
-        info = model_meta.get_field_info(instance)
-        if 'phone_number' in validated_data:
-            _phone_number = validated_data.pop('phone_number')
-            if _phone_number == instance.phone_number:
-                instance.phone_number_candidate = ''
-                instance.phone_number_confirm_pin = 0
-                instance.phone_number_candidate_confirm_pin = 0
-                instance.phone_number_confirm_attempts = 0
-                instance.save()
-            elif _phone_number != (instance.phone_number_candidate or instance.phone_number):
-                if instance.is_phone_number_confirmed:
-                    instance.phone_number_candidate = _phone_number
-                    instance.phone_number_confirm_attempts = 0
-                    instance.save()
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=False,
-                                                               generate_new=True)
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True,
-                                                               generate_new=True)
+        info = model_meta.get_field_info(user)
+        if (phone_number := validated_data.get('phone_number')) is not None:
+            if phone_number != (user.phone_number_candidate or user.phone_number):
+                if user.is_phone_number_confirmed:
+                    user.phone_number_candidate = phone_number
+                    user.phone_number_confirm_attempts = 0
+                    user.save()
+                    send_credential_confirmation_code(
+                        user,
+                        Credential.PHONE_NUMBER,
+                        candidate=False,
+                        generate_new=True,
+                        ignore_frequency_limit=True
+                    )
+                    send_credential_confirmation_code(
+                        user,
+                        Credential.PHONE_NUMBER,
+                        candidate=True,
+                        generate_new=True,
+                        ignore_frequency_limit=True
+                    )
                 else:
-                    instance.phone_number = _phone_number
-                    instance.phone_number_confirm_attempts = 0
-                    instance.save()
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=False,
-                                                               generate_new=True)
+                    user.phone_number = phone_number
+                    user.phone_number_confirm_attempts = 0
+                    user.save()
+                    send_credential_confirmation_code(
+                        user,
+                        Credential.PHONE_NUMBER,
+                        candidate=False,
+                        generate_new=True,
+                        ignore_frequency_limit=True
+                    )
+            del validated_data['phone_number']
         if 'email' in validated_data:
             _email = validated_data.pop('email')
-            if _email == instance.email:
-                instance.email_candidate = ''
-                instance.email_confirm_pin = 0
-                instance.email_candidate_confirm_pin = 0
-                instance.email_confirm_attempts = 0
-                instance.save()
-            elif _email != (instance.email_candidate or instance.email):
-                if instance.is_email_confirmed:
-                    instance.email_candidate = _email
-                    instance.email_confirm_attempts = 0
-                    instance.save()
-                    instance.send_credential_confirmation_code(Credential.EMAIL, candidate=False, generate_new=True)
-                    instance.send_credential_confirmation_code(Credential.EMAIL, candidate=True, generate_new=True)
+            if _email == user.email:
+                user.email_candidate = ''
+                user.email_confirm_pin = 0
+                user.email_candidate_confirm_pin = 0
+                user.email_confirm_attempts = 0
+                user.save()
+            elif _email != (user.email_candidate or user.email):
+                if user.is_email_confirmed:
+                    user.email_candidate = _email
+                    user.email_confirm_attempts = 0
+                    user.save()
+                    send_credential_confirmation_code(user, Credential.EMAIL, candidate=False, generate_new=True)
+                    send_credential_confirmation_code(user, Credential.EMAIL, candidate=True, generate_new=True)
                 else:
-                    instance.email = _email
-                    instance.email_confirm_attempts = 0
-                    instance.save()
-                    instance.send_credential_confirmation_code(Credential.EMAIL, generate_new=True)
+                    user.email = _email
+                    user.email_confirm_attempts = 0
+                    user.save()
+                    send_credential_confirmation_code(user, Credential.EMAIL, generate_new=True)
         for attr, value in validated_data.items():
             if attr in info.relations and info.relations[attr].to_many:
-                field = getattr(instance, attr)
+                field = getattr(user, attr)
                 field.set(value)
             else:
-                setattr(instance, attr, value)
-        instance.save()
-        return instance
+                setattr(user, attr, value)
+        user.save()
+        self.instance = user
+        return user
 
     class Meta:
         model = CustomUser
@@ -340,58 +345,56 @@ class ResetPasswordSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         validated_data = super().validate(attrs)
-        try:
-            self.user = CustomUser.objects.get(
+        if (user := CustomUser.objects.filter(
                 Q(phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(
                     email=validated_data['credential'], is_email_confirmed=True),
                 site__domain=validated_data['domain'],
-            )
-            if self.user.is_sms_timeout(SMSType.PASSWORD_RESET):
-                raise CustomAPIException(
-                    {
-                        '': [
-                            KwargsError(
-                                kwargs={},
-                                code=error_codes.TOO_FREQUENT_SMS_REQUESTS)
-                        ]
-                    }
-                )
-        except (CustomUser.DoesNotExist, ValueError, TypeError, OverflowError):
+        ).first()) is None:
             raise CustomAPIException(
-            {
-                'credential': [
-                    KwargsError(
-                        kwargs={'credential': attrs.get('credential')},
-                        code=error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
-                ]
-            }
-        )
+                {
+                    'credential': [
+                        KwargsError(
+                            kwargs={'credential': attrs.get('credential')},
+                            code=error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                    ]
+                }
+            )
+        else:
+            self.user = user
         return validated_data
 
 
 class ConfirmResetPasswordSerializer(PasswordSerializer):
     credential = serializers.CharField()
     domain = serializers.CharField()
-    code = serializers.CharField()
+    code = serializers.IntegerField()
 
     def validate(self, attrs):
         validated_data = super().validate(attrs)
-        try:
-            self.user = CustomUser.objects.get(
+        if (user := CustomUser.objects.filter(
                 Q(phone_number=validated_data['credential']) | Q(email=validated_data['credential']),
                 site__domain=validated_data['domain'],
-                password_reset_code=validated_data['code'],
-                password_reset_code_sms_sent_at__gte=timezone.now() - timedelta(
-                    minutes=moses_settings.PASSWORD_RESET_TIMEOUT_MINUTES)
-            )
-        except (CustomUser.DoesNotExist, ValueError, TypeError, OverflowError):
+        ).first()) is not None:
+
+            if user.password_reset_code != validated_data['code']:
+                raise CustomAPIException(
+                    {
+                        'code': [
+                            KwargsError(
+                                kwargs={},
+                                code=error_codes.INVALID_CONFIRMATION_CODE)
+                        ]
+                    }
+                )
+        else:
             raise CustomAPIException(
-            {
-                'code': [
-                    KwargsError(
-                        kwargs={},
-                        code=error_codes.INVALID_CONFIRMATION_CODE)
-                ]
-            }
-        )
+                {
+                    'code': [
+                        KwargsError(
+                            kwargs={},
+                            code=error_codes.INVALID_CONFIRMATION_CODE)
+                    ]
+                }
+            )
+        self.user = user
         return validated_data

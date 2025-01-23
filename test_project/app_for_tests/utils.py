@@ -15,7 +15,7 @@ SENT_SMS = {}
 
 def remember_pin(to, body):
     numbers_in_body = re.findall(r'\d+', body)
-    SENT_SMS[to] = numbers_in_body[0] if len(numbers_in_body) else None
+    SENT_SMS[to] = int(numbers_in_body[0]) if len(numbers_in_body) else None
 
 
 def get_random_mfa_key():
