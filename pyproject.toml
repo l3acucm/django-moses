@@ -1,11 +1,11 @@
 [project]
 name = "django-moses"
-version = "0.11.7"
+version = "0.11.8"
 
 [tool.poetry]
 name = "django-moses"
 description = "Advanced authentication with OTP and phone number verification"
-version = "0.11.7"
+version = "0.11.8"
 authors = ["Vassily Vorobyov <vassily.v.v@gmail.com>"]
 packages = [{ include = "moses/**/*", from = "." }]
 

@@ -370,7 +370,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     KwargsError(error_codes.INVALID_SMS_TYPE)
                 ]
             }, status_code=status.HTTP_404_NOT_FOUND)
-        if (candidate:=('candidate' in request.query_params)) in request.query_params:
+        if candidate := ('candidate' in request.query_params):
             user = get_object_or_404(
                 CustomUser,
                 phone_number_candidate=request.query_params.get('phone_number'),
@@ -389,7 +389,6 @@ class UserViewSet(viewsets.ModelViewSet):
                 sms_unlocks_at = user.phone_number_candidate_confirmation_code_sms_unlocks_at
             else:
                 sms_unlocks_at = user.phone_number_confirmation_code_sms_unlocks_at
-
 
         return Response({
             'unlocks_at': sms_unlocks_at
