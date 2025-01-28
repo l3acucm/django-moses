@@ -60,7 +60,7 @@ class CustomUserAdmin(UserAdmin):
             'phone_number_confirmation_pin',
             'phone_number_candidate_confirmation_pin',
             'phone_number_confirmation_attempts',
-            'password_reset_code_sms_sent_at',
+            'password_reset_code_sms_unlocks_at',
         )}),
         ('Access', {
             'fields': (

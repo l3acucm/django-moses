@@ -38,7 +38,14 @@ def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, c
         case _:
             raise ValueError(error_codes.INVALID_CREDENTIAL)
     if getattr(user, attempts_field) >= max_attempts_limit:
-        return False, False
+        raise CustomAPIException(
+            {
+                '': [
+                    KwargsError(
+                        code=error_codes.ATTEMPTS_LIMIT_REACHED)
+                ]
+            }
+        )
     received_pin, received_candidate_pin = int(main_pin_str or '0'), int(candidate_pin_str or '0')
     is_main_pin_correct = received_pin == getattr(user, current_pin_field)
     is_candidate_pin_correct = None
@@ -79,11 +86,14 @@ def send_credential_confirmation_code(
                 unlock_time_field = 'phone_number_confirmation_code_sms_unlocks_at'
                 credential_field = 'phone_number'
                 pin_field = 'phone_number_confirmation_pin'
-            if ((sut := sms_unlock_time(
-                    user,
-                    SMSType.PHONE_NUMBER_CONFIRMATION,
-                    candidate=candidate)
-            ) is None or sut <= timezone.now() or ignore_frequency_limit):
+            if (
+                    (
+                            sut := sms_unlock_time(
+                                user,
+                                SMSType.PHONE_NUMBER_CONFIRMATION,
+                                candidate=candidate)
+                    ) is None or sut <= timezone.now() or ignore_frequency_limit
+            ):
                 new_unlock_time = now() + timedelta(minutes=moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD)
                 setattr(user, unlock_time_field, new_unlock_time)
             else:
@@ -94,7 +104,6 @@ def send_credential_confirmation_code(
                         ]
                     }
                 )
-            is_attempts_limit_reached = user.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
         case Credential.EMAIL:
             send_function = send_email_confirmation_message
             message_body = str(strings.EMAIL_CONFIRMATION_PIN_BODY)
@@ -104,18 +113,9 @@ def send_credential_confirmation_code(
             else:
                 credential_field = 'email'
                 pin_field = 'email_confirmation_pin'
-            is_attempts_limit_reached = user.email_confirmation_attempts >= moses_settings.EMAIL_CONFIRMATION_ATTEMPTS_LIMIT
         case _:
             raise ValueError(error_codes.INVALID_CREDENTIAL_TYPE)
-    if is_attempts_limit_reached:
-        raise CustomAPIException(
-            {
-                '': [
-                    KwargsError(
-                        code=error_codes.ATTEMPTS_LIMIT_REACHED)
-                ]
-            }
-        )
+
     if generate_new:
         setattr(user, pin_field, random.randint(100000, 999999))
     user.save()
