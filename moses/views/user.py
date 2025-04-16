@@ -316,8 +316,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["get"], detail=False)
     def get_mfa_key(self, request):
-        mfa_secret_key = base64.b32encode(
-            bytes(''.join(random.choice(string.ascii_letters) for _ in range(100)).encode('utf-8'))).decode('utf-8')
+        mfa_secret_key = pyotp.random_base32()
         return Response(
             {
                 'mfa_secret_key': mfa_secret_key,
