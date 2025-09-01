@@ -26,8 +26,10 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', False)
         extra_fields.setdefault('is_active', True)
         user = self._create_user(phone_number, password, **extra_fields)
-        send_credential_confirmation_code(user, Credential.EMAIL, generate_new=True)
-        send_credential_confirmation_code(user, Credential.PHONE_NUMBER, generate_new=True)
+        if moses_settings.REQUIRE_EMAIL_CONFIRMATION:
+            send_credential_confirmation_code(user, Credential.EMAIL, generate_new=True)
+        if moses_settings.REQUIRE_PHONE_NUMBER_CONFIRMATION:
+            send_credential_confirmation_code(user, Credential.PHONE_NUMBER, generate_new=True)
         return user
 
     def create_superuser(self, phone_number, password, **extra_fields):

@@ -26,6 +26,8 @@ default_settings = {
     "PHONE_NUMBER_VALIDATOR": None,
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
+    "REQUIRE_EMAIL_CONFIRMATION": True,
+    "REQUIRE_PHONE_NUMBER_CONFIRMATION": True,
     "DOMAIN": None,
     "SENDER_EMAIL": None,
     "URL_PREFIX": None,
