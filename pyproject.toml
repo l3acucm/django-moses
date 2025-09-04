@@ -1,6 +1,6 @@
 [project]
 name = "django-moses"
-version = "0.12.6"
+version = "0.12.7"
 description = "Advanced authentication with OTP and phone number verification"
 authors = [
     {name = "Vassily Vorobyov", email = "l3acucm@gmail.com"}

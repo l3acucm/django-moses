@@ -27,6 +27,7 @@ default_settings = {
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "REQUIRE_EMAIL_CONFIRMATION": True,
+    "EMAILS_DISABLED": False,
     "REQUIRE_PHONE_NUMBER_CONFIRMATION": True,
     "DOMAIN": None,
     "SENDER_EMAIL": None,
