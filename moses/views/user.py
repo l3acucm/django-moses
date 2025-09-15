@@ -441,7 +441,7 @@ class UserViewSet(viewsets.ModelViewSet):
             request.data.get('candidate_pin', '')
         )
         if False not in confirmation_result:
-            if candidate_phone_number and moses_settings.EMAILS_DISABLED:
+            if candidate_phone_number and not moses_settings.EMAILS_DISABLED:
                 with translation.override(request.user.preferred_language):
                     send_mail(
                         _("Phone number changed"),
