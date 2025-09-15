@@ -1,3 +1,5 @@
+from unittest import case
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
@@ -93,61 +95,63 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
     def get_is_mfa_enabled(self, obj):
         return len(obj.mfa_secret_key) > 0
 
+    def _update_credential(self, user, credential: Credential, value: str):
+        match credential:
+            case Credential.PHONE_NUMBER:
+                is_confirmed_field = 'is_phone_number_confirmed'
+                credential_field = 'phone_number'
+                candidate_credential_field = 'phone_number_candidate'
+                attempts_field = 'phone_number_confirmation_attempts'
+                credential_pin_field = 'phone_number_confirmation_pin'
+                candidate_credential_pin_field = 'phone_number_candidate_confirmation_pin'
+            case Credential.EMAIL:
+                is_confirmed_field = 'is_email_confirmed'
+                credential_field = 'email'
+                candidate_credential_field = 'email_candidate'
+                attempts_field = 'email_confirmation_attempts'
+                credential_pin_field = 'email_confirmation_pin'
+                candidate_credential_pin_field = 'email_candidate_confirmation_pin'
+        if getattr(user, credential_field) == value:
+            setattr(user, candidate_credential_field, '')
+            setattr(user, credential_pin_field, 0)
+            setattr(user, candidate_credential_pin_field, 0)
+            setattr(user, attempts_field, 0)
+        elif value != (getattr(user, candidate_credential_field) or getattr(user, credential_field)):
+            if getattr(user, is_confirmed_field):
+                setattr(user, candidate_credential_field, value)
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=False,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=True,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+            else:
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=False,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+                setattr(user, credential_field, value)
+        setattr(user, attempts_field, 0)
+        user.save()
+
     def update(self, user, validated_data):
         raise_errors_on_nested_writes('update', self, validated_data)
         info = model_meta.get_field_info(user)
-        if (phone_number := validated_data.get('phone_number')) is not None:
-            if phone_number != (user.phone_number_candidate or user.phone_number):
-                if user.is_phone_number_confirmed:
-                    user.phone_number_candidate = phone_number
-                    user.phone_number_confirm_attempts = 0
-                    user.save()
-                    send_credential_confirmation_code(
-                        user,
-                        Credential.PHONE_NUMBER,
-                        candidate=False,
-                        generate_new=True,
-                        ignore_frequency_limit=True
-                    )
-                    send_credential_confirmation_code(
-                        user,
-                        Credential.PHONE_NUMBER,
-                        candidate=True,
-                        generate_new=True,
-                        ignore_frequency_limit=True
-                    )
-                else:
-                    user.phone_number = phone_number
-                    user.phone_number_confirm_attempts = 0
-                    user.save()
-                    send_credential_confirmation_code(
-                        user,
-                        Credential.PHONE_NUMBER,
-                        candidate=False,
-                        generate_new=True,
-                        ignore_frequency_limit=True
-                    )
-            del validated_data['phone_number']
-        if 'email' in validated_data:
-            _email = validated_data.pop('email')
-            if _email == user.email:
-                user.email_candidate = ''
-                user.email_confirm_pin = 0
-                user.email_candidate_confirm_pin = 0
-                user.email_confirm_attempts = 0
-                user.save()
-            elif _email != (user.email_candidate or user.email):
-                if user.is_email_confirmed:
-                    user.email_candidate = _email
-                    user.email_confirm_attempts = 0
-                    user.save()
-                    send_credential_confirmation_code(user, Credential.EMAIL, candidate=False, generate_new=True)
-                    send_credential_confirmation_code(user, Credential.EMAIL, candidate=True, generate_new=True)
-                else:
-                    user.email = _email
-                    user.email_confirm_attempts = 0
-                    user.save()
-                    send_credential_confirmation_code(user, Credential.EMAIL, generate_new=True)
+        if (phone_number := validated_data.pop('phone_number', None)) is not None:
+            self._update_credential(user, Credential.PHONE_NUMBER, phone_number)
+        if (email := validated_data.pop('email', None)) is not None:
+            self._update_credential(user, Credential.EMAIL, email)
         for attr, value in validated_data.items():
             if attr in info.relations and info.relations[attr].to_many:
                 field = getattr(user, attr)
