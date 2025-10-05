@@ -1,11 +1,6 @@
-from unittest import case
-
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.models import Site
-from django.core import exceptions as django_exceptions
-from django.core.validators import EmailValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from djoser import constants
@@ -22,6 +17,64 @@ from moses.conf import settings as moses_settings
 from moses.enums import Credential
 from moses.models import CustomUser
 from moses.services.credentials_confirmation import send_credential_confirmation_code
+from moses.validators import EmailValidator, PasswordValidator
+
+
+class CustomEmailField(serializers.EmailField):
+    """Custom email field that raises CustomAPIException for all validation errors."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Use the custom EmailValidator
+        self.validators = [EmailValidator(field_name='email')]
+
+    def run_validation(self, data=serializers.empty):
+        """Override to handle required field validation with CustomAPIException."""
+        # Check if field is required and value is empty
+        if data is serializers.empty or not data:
+            if self.required:
+                raise CustomAPIException({
+                    'email': [
+                        KwargsError(
+                            code=error_codes.FIELD_IS_REQUIRED,
+                            kwargs={'provided_email': ''}
+                        )
+                    ]
+                })
+            return self.get_default()
+
+        # Proceed with normal validation (which will call EmailValidator)
+        return super().run_validation(data)
+
+
+class CustomPasswordField(serializers.CharField):
+    """Custom password field that raises CustomAPIException for all validation errors."""
+
+    def __init__(self, field_name='password', **kwargs):
+        self.field_name = field_name
+        kwargs.setdefault('style', {'input_type': 'password'})
+        kwargs.setdefault('write_only', True)
+        super().__init__(**kwargs)
+        # Use the custom PasswordValidator
+        self.validators = [PasswordValidator(field_name=self.field_name)]
+
+    def run_validation(self, data=serializers.empty):
+        """Override to handle required field validation with CustomAPIException."""
+        # Check if field is required and value is empty
+        if data is serializers.empty or not data:
+            if self.required:
+                raise CustomAPIException({
+                    self.field_name: [
+                        KwargsError(
+                            code=error_codes.FIELD_IS_REQUIRED,
+                            kwargs={}
+                        )
+                    ]
+                })
+            return self.get_default()
+
+        # Proceed with normal validation (which will call PasswordValidator)
+        return super().run_validation(data)
 
 
 class PinSerializer(Serializer):
@@ -194,13 +247,9 @@ def site_with_domain_exists(value):
 
 class CustomUserCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(validators=[moses_settings.PHONE_NUMBER_VALIDATOR])
-    email = serializers.CharField(validators=[EmailValidator])
+    email = CustomEmailField(required=True)
     domain = serializers.CharField(validators=[site_with_domain_exists], write_only=True)
-    password = serializers.CharField(
-        style={'input_type': 'password'},
-        write_only=True,
-        validators=[validate_password]
-    )
+    password = CustomPasswordField(required=True)
     default_error_messages = {
         'cannot_create_user': constants.Messages.CANNOT_CREATE_USER_ERROR,
     }
@@ -321,25 +370,23 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
 
 
 class PasswordSerializer(serializers.Serializer):
-    new_password = serializers.CharField(style={"input_type": "password"})
+    new_password = CustomPasswordField(field_name='new_password', required=True)
 
     def validate(self, attrs):
+        # Password validation is now handled by CustomPasswordField
+        # But we still need to validate against user attributes
         user = getattr(self, "user", None) or self.context["request"].user
-        # why assert? There are ValidationError / fail everywhere
         assert user is not None
 
+        # The PasswordValidator in CustomPasswordField will handle this
+        # but we need to pass the user context, which we can do by re-validating
         try:
-            validate_password(attrs["new_password"], user)
-        except django_exceptions.ValidationError as e:
-            raise CustomAPIException(
-                {
-                    'new_password': [
-                        KwargsError(
-                            kwargs={},
-                            code=error_codes.INVALID_PASSWORD)
-                    ]
-                }
-            )
+            password_validator = PasswordValidator(field_name='new_password')
+            password_validator(attrs["new_password"], user)
+        except CustomAPIException:
+            # Re-raise the CustomAPIException as-is
+            raise
+
         return super().validate(attrs)
 
 

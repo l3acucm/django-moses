@@ -15,3 +15,11 @@ INVALID_CREDENTIAL_TYPE = 'invalid_credential_type'
 ATTEMPTS_LIMIT_REACHED = 'attempts_limit_reached'
 INVALID_SMS_TYPE = 'invalid_sms_type'
 PHONE_NUMBER_NOT_CONFIRMED = 'phone_number_not_confirmed'
+
+# Validator error codes
+INVALID_EMAIL = 'invalid_email'
+FIELD_IS_REQUIRED = 'field_is_required'
+PASSWORD_TOO_SHORT = 'password_too_short'
+PASSWORD_TOO_COMMON = 'password_too_common'
+PASSWORD_ENTIRELY_NUMERIC = 'password_entirely_numeric'
+PASSWORD_TOO_SIMILAR = 'password_too_similar'
