@@ -24,6 +24,7 @@ class ObjDict(dict):
 
 default_settings = {
     "PHONE_NUMBER_VALIDATOR": None,
+    "SHORT_USER_SERIALIZER": None,
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "REQUIRE_EMAIL_CONFIRMATION": True,
@@ -43,7 +44,7 @@ default_settings = {
     ),
 }
 
-SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR"]
+SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR", "SHORT_USER_SERIALIZER"]
 
 
 class Settings:

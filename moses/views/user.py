@@ -27,7 +27,6 @@ from moses.conf import settings as moses_settings
 from moses.decorators import otp_required
 from moses.enums import Credential
 from moses.models import CustomUser
-from moses.serializers import ShortCustomUserSerializer
 from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
 from moses.services.reset_password import send_password_reset_code
 
@@ -257,7 +256,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        serializer.user.set_password(serializer.data["new_password"])
+        serializer.user.set_password(serializer.validated_data["new_password"])
         if hasattr(serializer.user, "last_login"):
             serializer.user.last_login = now()
         serializer.user.save()
@@ -301,7 +300,7 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_or_email = request.GET.get('value', None)
         user = CustomUser.objects.filter(Q(email=phone_or_email) | Q(phone_number=phone_or_email)).first()
         if user:
-            return Response(ShortCustomUserSerializer(user).data)
+            return Response(moses_settings.SHORT_USER_SERIALIZER(user, context=self.get_serializer_context()).data)
         else:
             raise CustomAPIException({
                 '': [

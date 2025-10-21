@@ -121,17 +121,6 @@ class PasswordResetSerializer(serializers.Serializer):
             return value
 
 
-class ShortCustomUserSerializer(serializers.ModelSerializer):
-    income_subscription = serializers.BooleanField(read_only=True)
-    outcome_subscription = serializers.BooleanField(read_only=True)
-
-    class Meta:
-        model = CustomUser
-        fields = ['id', 'first_name', 'last_name', 'outcome_subscription', 'income_subscription']
-        read_only_fields = ['id', 'first_name', 'last_name', 'income_subscription',
-                            'outcome_subscription']
-
-
 class PublicCustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
