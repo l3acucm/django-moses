@@ -1,3 +1,4 @@
+
 import random
 from datetime import timedelta
 
@@ -11,6 +12,7 @@ from moses.conf import settings as moses_settings
 from moses.constants import strings
 from moses.enums import Credential, SMSType
 from moses.services.sms import sms_unlock_time
+from moses.signals import phone_number_confirmed, email_confirmed
 
 
 def send_email_confirmation_message(email: str, body: str):
@@ -56,10 +58,33 @@ def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, c
         setattr(user, candidate_pin_field, 0)
         setattr(user, current_credential_confirmation_field, True)
         setattr(user, attempts_field, 0)
+
+        # Check if this is an update (had candidate) or initial confirmation
+        had_candidate = bool(getattr(user, candidate_credential_field))
+
         if candidate := getattr(user, candidate_credential_field):
             setattr(user, current_credential_field, candidate)
             setattr(user, candidate_credential_field, '')
         user.save()
+
+        # Emit signal after successful confirmation
+        confirmed_value = getattr(user, current_credential_field)
+        is_initial_confirmation = not had_candidate
+
+        if credential == Credential.PHONE_NUMBER:
+            phone_number_confirmed.send(
+                sender=user.__class__,
+                user=user,
+                phone_number=confirmed_value,
+                is_initial_confirmation=is_initial_confirmation
+            )
+        elif credential == Credential.EMAIL:
+            email_confirmed.send(
+                sender=user.__class__,
+                user=user,
+                email=confirmed_value,
+                is_initial_confirmation=is_initial_confirmation
+            )
     else:
         setattr(user, attempts_field, getattr(user, attempts_field) + 1)
         user.save()

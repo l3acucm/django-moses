@@ -66,3 +66,58 @@ Quick start
     admin.site.login_form = OTPAdminAuthenticationForm
 ```
 8. Run ``python manage.py migrate`` to create the accounts models.
+
+Signals
+-------
+
+Moses emits Django signals during credential confirmation workflows. You can listen to these signals in your application to perform custom actions.
+
+### Available Signals
+
+**phone_number_confirmed**
+
+Emitted when a user successfully confirms their phone number.
+
+Parameters:
+- `sender`: The User model class
+- `user`: The user instance whose phone was confirmed
+- `phone_number`: The confirmed phone number (str)
+- `is_initial_confirmation`: True if this is the first confirmation, False if updating phone number
+
+Example usage:
+```python
+from django.dispatch import receiver
+from moses.signals import phone_number_confirmed
+from moses.models import CustomUser
+
+@receiver(phone_number_confirmed, sender=CustomUser)
+def handle_phone_confirmed(sender, user, phone_number, is_initial_confirmation, **kwargs):
+    if is_initial_confirmation:
+        print(f"User {user.id} confirmed their phone: {phone_number}")
+    else:
+        print(f"User {user.id} changed their phone to: {phone_number}")
+```
+
+**email_confirmed**
+
+Emitted when a user successfully confirms their email address.
+
+Parameters:
+- `sender`: The User model class
+- `user`: The user instance whose email was confirmed
+- `email`: The confirmed email address (str)
+- `is_initial_confirmation`: True if this is the first confirmation, False if updating email
+
+Example usage:
+```python
+from django.dispatch import receiver
+from moses.signals import email_confirmed
+from moses.models import CustomUser
+
+@receiver(email_confirmed, sender=CustomUser)
+def handle_email_confirmed(sender, user, email, is_initial_confirmation, **kwargs):
+    if is_initial_confirmation:
+        print(f"User {user.id} confirmed their email: {email}")
+    else:
+        print(f"User {user.id} changed their email to: {email}")
+```
