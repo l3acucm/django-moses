@@ -1,7 +1,3 @@
-import base64
-import random
-import string
-
 import pyotp
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -233,12 +229,13 @@ class UserViewSet(viewsets.ModelViewSet):
 
         self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
-        with translation.override(self.request.user.preferred_language):
-            send_mail(_("Password changed"),
-                      _(
-                          "Your password has been changed. "
-                          f"If it happened without your desire - contact us by email support@{djoser_settings.DOMAIN}."),
-                      'noreply@' + djoser_settings.DOMAIN, [self.request.user.email])
+        if not moses_settings.EMAILS_DISABLED:
+            with translation.override(self.request.user.preferred_language):
+                send_mail(_("Password changed"),
+                          _(
+                              "Your password has been changed. "
+                              f"If it happened without your desire - contact us by email support@{djoser_settings.DOMAIN}."),
+                          'noreply@' + djoser_settings.DOMAIN, [self.request.user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 
