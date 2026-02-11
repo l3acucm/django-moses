@@ -50,7 +50,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = _("Users")
         constraints = [
             models.UniqueConstraint(fields=['site', 'phone_number'], name='one_phone_number_per_site'),
-            models.UniqueConstraint(fields=['site', 'email'], name='one_email_per_site')
+            models.UniqueConstraint(fields=['site', 'email'], name='one_email_per_site'),
+            models.UniqueConstraint(
+                fields=['site', 'google_sub'],
+                name='one_google_sub_per_site',
+                condition=~models.Q(google_sub=''),
+            ),
         ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -114,6 +119,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(default=timezone.now, blank=True, null=True, verbose_name=_("Created at"))
 
     mfa_secret_key = models.CharField(blank=True, default='', max_length=160)
+
+    google_sub = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name=_("Google Subject ID"),
+    )
 
     USERNAME_FIELD = 'phone_number'
 

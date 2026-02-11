@@ -1,6 +1,6 @@
 [project]
 name = "django-moses"
-version = "0.13.1"
+version = "0.14.0"
 description = "Advanced authentication with OTP and phone number verification"
 authors = [
     {name = "Vassily Vorobyov", email = "l3acucm@gmail.com"}
@@ -11,7 +11,8 @@ dependencies = [
     "django (>=5.2.0,<6.0)",
     "djangorestframework-simplejwt (>=5.5.0,<6.0.0)",
     "djoser (>=2.3.1,<3.0.0)",
-    "pyotp (>=2.9.0,<3.0.0)"
+    "pyotp (>=2.9.0,<3.0.0)",
+    "google-auth (>=2.29.0,<3.0.0)"
 ]
 
 [tool.poetry]
@@ -28,7 +29,7 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.setuptools]
-packages = ["moses", "moses.migrations", "moses.views"]
+packages = ["moses", "moses.migrations", "moses.views", "moses.services", "moses.common"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_project.settings"

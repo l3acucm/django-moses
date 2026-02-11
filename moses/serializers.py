@@ -404,6 +404,20 @@ class ResetPasswordSerializer(serializers.Serializer):
         return validated_data
 
 
+class GoogleSignInSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
+class GoogleCompleteRegistrationSerializer(serializers.Serializer):
+    google_auth_token = serializers.CharField(required=True)
+    phone_number = serializers.CharField(
+        validators=[moses_settings.PHONE_NUMBER_VALIDATOR],
+        required=True
+    )
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
 class ConfirmResetPasswordSerializer(PasswordSerializer):
     credential = serializers.CharField()
     domain = serializers.CharField()

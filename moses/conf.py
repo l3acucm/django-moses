@@ -42,6 +42,8 @@ default_settings = {
     "LANGUAGE_CHOICES": (
         ("en", _("English")),
     ),
+    "GOOGLE_OAUTH2_CLIENT_ID": None,
+    "GOOGLE_AUTH_TEMP_TOKEN_EXPIRY_MINUTES": 5,
 }
 
 SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR", "SHORT_USER_SERIALIZER"]

@@ -16,6 +16,12 @@ ATTEMPTS_LIMIT_REACHED = 'attempts_limit_reached'
 INVALID_SMS_TYPE = 'invalid_sms_type'
 PHONE_NUMBER_NOT_CONFIRMED = 'phone_number_not_confirmed'
 
+# Google Sign-In error codes
+GOOGLE_SIGN_IN_NOT_CONFIGURED = 'google_sign_in_not_configured'
+INVALID_GOOGLE_ID_TOKEN = 'invalid_google_id_token'
+INVALID_GOOGLE_AUTH_TEMP_TOKEN = 'invalid_google_auth_temp_token'
+GOOGLE_AUTH_TEMP_TOKEN_EXPIRED = 'google_auth_temp_token_expired'
+
 # Validator error codes
 INVALID_EMAIL = 'invalid_email'
 FIELD_IS_REQUIRED = 'field_is_required'
