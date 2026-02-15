@@ -1,6 +1,6 @@
 [project]
 name = "django-moses"
-version = "0.14.0"
+version = "0.14.1"
 description = "Advanced authentication with OTP and phone number verification"
 authors = [
     {name = "Vassily Vorobyov", email = "l3acucm@gmail.com"}
@@ -12,7 +12,8 @@ dependencies = [
     "djangorestframework-simplejwt (>=5.5.0,<6.0.0)",
     "djoser (>=2.3.1,<3.0.0)",
     "pyotp (>=2.9.0,<3.0.0)",
-    "google-auth (>=2.29.0,<3.0.0)"
+    "google-auth (>=2.29.0,<3.0.0)",
+    "social-auth-app-django (>=5.7.0,<6.0.0)"
 ]
 
 [tool.poetry]

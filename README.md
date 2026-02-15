@@ -13,6 +13,7 @@ Quick start
         'moses',
         'django.contrib.admin',
         ...
+        'social_django',
     ]
 ```
 2. Set moses's CustomUser model as AUTH_USER_MODEL::
@@ -29,6 +30,7 @@ Quick start
 4. Add MFAModelBackend as Authentication backend to process OTP on authentication::
 ```
     AUTHENTICATION_BACKENDS = [
+        'social_core.backends.google.GoogleOAuth2',
         'moses.authentication.MFAModelBackend',
         ...
     ]
@@ -64,8 +66,27 @@ Quick start
     admin.site.site_header = _('Admin Panel')
     admin.site.index_title = 'Welcome'
     admin.site.login_form = OTPAdminAuthenticationForm
+    urlpatterns = [
+        ...
+        path('auth/', include('social_django.urls', namespace='social')),
+    ]
 ```
 8. Run ``python manage.py migrate`` to create the accounts models.
+
+9. Add middleware:
+```
+MIDDLEWARE = [
+    ...
+    'social_django.middleware.SocialAuthExceptionMiddleware',
+]
+```
+10. Add context processors:
+```
+TEMPLATES[0]['OPTIONS']['context_processors'] += [
+    'social_django.context_processors.backends',
+    'social_django.context_processors.login_redirect',
+]
+```
 
 Signals
 -------
