@@ -27,7 +27,7 @@ def send_password_reset_code(user, credential: Credential) -> bool:
                 if (sut:=sms_unlock_time(user, SMSType.PASSWORD_RESET)) is None or sut <= timezone.now():
                     user.password_reset_code = random.randint(100000, 999999)
                     user.password_reset_code_sms_unlocks_at = timezone.now() + timedelta(
-                        minutes=moses_settings.PASSWORD_RESET_TIMEOUT_MINUTES)
+                        seconds=moses_settings.PASSWORD_RESET_TIMEOUT_SECONDS)
                     user.save()
                     message_body = str(strings.PASSWORD_RESET_PIN_BODY) % user.password_reset_code
                     moses_settings.SEND_SMS_HANDLER(user.phone_number, message_body)

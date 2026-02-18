@@ -66,7 +66,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         on_delete=models.CASCADE
     )
 
-    email = models.EmailField(blank=False)
+    email = models.EmailField(blank=True)
     email_candidate = models.EmailField(blank=True, verbose_name=_("Email candidate"))
     is_email_confirmed = models.BooleanField(default=False, verbose_name=_("Is email confirmed"))
     email_confirmation_pin = models.PositiveIntegerField(default=0, verbose_name=_("Email confirm PIN"))

@@ -236,7 +236,7 @@ def site_with_domain_exists(value):
 
 class CustomUserCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(validators=[moses_settings.PHONE_NUMBER_VALIDATOR])
-    email = CustomEmailField(required=True)
+    email = CustomEmailField(required=False)
     domain = serializers.CharField(validators=[site_with_domain_exists], write_only=True)
     password = CustomPasswordField(required=True)
     default_error_messages = {

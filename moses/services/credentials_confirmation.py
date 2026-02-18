@@ -1,4 +1,3 @@
-
 import random
 from datetime import timedelta
 
@@ -119,7 +118,7 @@ def send_credential_confirmation_code(
                                 candidate=candidate)
                     ) is None or sut <= timezone.now() or ignore_frequency_limit
             ):
-                new_unlock_time = now() + timedelta(minutes=moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD)
+                new_unlock_time = now() + timedelta(seconds=moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD)
                 setattr(user, unlock_time_field, new_unlock_time)
             else:
                 raise CustomAPIException(
