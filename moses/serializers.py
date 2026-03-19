@@ -418,6 +418,21 @@ class GoogleCompleteRegistrationSerializer(serializers.Serializer):
     domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
 
 
+class TelegramSignInSerializer(serializers.Serializer):
+    auth_data = serializers.DictField(required=True)
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
+class TelegramCompleteRegistrationSerializer(serializers.Serializer):
+    telegram_auth_token = serializers.CharField(required=True)
+    phone_number = serializers.CharField(
+        validators=[moses_settings.PHONE_NUMBER_VALIDATOR],
+        required=True
+    )
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
 class ConfirmResetPasswordSerializer(PasswordSerializer):
     credential = serializers.CharField()
     domain = serializers.CharField()

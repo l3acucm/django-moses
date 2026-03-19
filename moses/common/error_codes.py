@@ -22,6 +22,13 @@ INVALID_GOOGLE_ID_TOKEN = 'invalid_google_id_token'
 INVALID_GOOGLE_AUTH_TEMP_TOKEN = 'invalid_google_auth_temp_token'
 GOOGLE_AUTH_TEMP_TOKEN_EXPIRED = 'google_auth_temp_token_expired'
 
+# Telegram Sign-In error codes
+TELEGRAM_SIGN_IN_NOT_CONFIGURED = 'telegram_sign_in_not_configured'
+INVALID_TELEGRAM_AUTH_DATA = 'invalid_telegram_auth_data'
+TELEGRAM_AUTH_DATA_EXPIRED = 'telegram_auth_data_expired'
+INVALID_TELEGRAM_AUTH_TEMP_TOKEN = 'invalid_telegram_auth_temp_token'
+TELEGRAM_AUTH_TEMP_TOKEN_EXPIRED = 'telegram_auth_temp_token_expired'
+
 # Validator error codes
 INVALID_EMAIL = 'invalid_email'
 FIELD_IS_REQUIRED = 'field_is_required'

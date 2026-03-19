@@ -56,6 +56,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
                 name='one_google_sub_per_site',
                 condition=~models.Q(google_sub=''),
             ),
+            models.UniqueConstraint(
+                fields=['site', 'telegram_id'],
+                name='one_telegram_id_per_site',
+                condition=~models.Q(telegram_id=''),
+            ),
         ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -125,6 +130,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         default='',
         verbose_name=_("Google Subject ID"),
+    )
+
+    telegram_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name=_("Telegram ID"),
     )
 
     USERNAME_FIELD = 'phone_number'

@@ -89,6 +89,128 @@ TEMPLATES[0]['OPTIONS']['context_processors'] += [
 ]
 ```
 
+Google Sign-In
+--------------
+
+Moses supports authentication via Google OAuth2. To enable it:
+
+1. Create a Google OAuth2 Client ID in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+
+2. Add the client ID to your `MOSES` settings:
+```python
+    MOSES = {
+        ...
+        "GOOGLE_OAUTH2_CLIENT_ID": "your-google-client-id.apps.googleusercontent.com",
+    }
+```
+
+3. The following endpoints will be available:
+
+- **POST** `/moses/token/google/` — Step 1: Send the Google `id_token` and `domain`. If the user exists, returns JWT tokens. If the user is new, returns a temporary `google_auth_token` for completing registration.
+
+  Request body:
+  ```json
+  {"id_token": "<google-id-token>", "domain": "example.com"}
+  ```
+
+- **POST** `/moses/token/google/complete/` — Step 2 (new users only): Send the `google_auth_token`, `phone_number`, and `domain` to create the account and receive JWT tokens.
+
+  Request body:
+  ```json
+  {"google_auth_token": "<temp-token>", "phone_number": "+1234567890", "domain": "example.com"}
+  ```
+
+Telegram Sign-In
+----------------
+
+Moses supports authentication via the [Telegram Login Widget](https://core.telegram.org/widgets/login) — the method officially recommended by Telegram.
+
+### Setup
+
+1. Create a Telegram bot via [@BotFather](https://t.me/BotFather).
+
+2. In BotFather, go to **Bot Settings → Domain → Add your website domain** to allow login from your site.
+
+3. Add the bot token to your `MOSES` settings:
+```python
+    MOSES = {
+        ...
+        "TELEGRAM_BOT_TOKEN": "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ",
+    }
+```
+
+4. Optional settings:
+```python
+    MOSES = {
+        ...
+        "TELEGRAM_AUTH_TEMP_TOKEN_EXPIRY_MINUTES": 5,   # temp token lifetime for new user registration (default: 5)
+        "TELEGRAM_AUTH_DATA_MAX_AGE_SECONDS": 300,        # max age of Telegram auth data to prevent replay attacks (default: 300 = 5min)
+    }
+```
+
+5. Add the [Telegram Login Widget](https://core.telegram.org/widgets/login) to your frontend. The widget will return auth data containing: `id`, `first_name`, `last_name`, `username`, `photo_url`, `auth_date`, and `hash`.
+
+### API Endpoints
+
+- **POST** `/moses/token/telegram/` — Step 1: Send the Telegram auth data and `domain`. If the user exists (by `telegram_id`), returns JWT tokens. If the user is new, returns a temporary `telegram_auth_token` for completing registration.
+
+  Request body:
+  ```json
+  {
+    "auth_data": {
+      "id": 123456789,
+      "first_name": "John",
+      "last_name": "Doe",
+      "username": "johndoe",
+      "photo_url": "https://t.me/i/userpic/...",
+      "auth_date": 1234567890,
+      "hash": "abc123..."
+    },
+    "domain": "example.com"
+  }
+  ```
+
+  Response (existing user):
+  ```json
+  {"status": "authenticated", "refresh": "<jwt>", "access": "<jwt>"}
+  ```
+
+  Response (new user):
+  ```json
+  {
+    "status": "phone_required",
+    "telegram_auth_token": "<temp-token>",
+    "first_name": "John",
+    "last_name": "Doe",
+    "username": "johndoe"
+  }
+  ```
+
+- **POST** `/moses/token/telegram/complete/` — Step 2 (new users only): Send the `telegram_auth_token`, `phone_number`, optional `email`, and `domain` to create the account and receive JWT tokens.
+
+  Request body:
+  ```json
+  {
+    "telegram_auth_token": "<temp-token>",
+    "phone_number": "+1234567890",
+    "email": "john@example.com",
+    "domain": "example.com"
+  }
+  ```
+
+  Response:
+  ```json
+  {"status": "authenticated", "refresh": "<jwt>", "access": "<jwt>"}
+  ```
+
+### How Verification Works
+
+Moses verifies Telegram auth data using the algorithm specified by Telegram:
+1. A SHA-256 hash of the bot token is used as the HMAC secret key.
+2. All auth data fields (except `hash`) are sorted alphabetically and joined as `key=value\n`.
+3. An HMAC-SHA-256 signature is computed and compared against the received `hash`.
+4. The `auth_date` is checked to prevent replay attacks.
+
 Signals
 -------
 
