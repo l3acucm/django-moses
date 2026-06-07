@@ -24,7 +24,7 @@ class ObjDict(dict):
 
 default_settings = {
     "PHONE_NUMBER_VALIDATOR": None,
-    "SHORT_USER_SERIALIZER": None,
+    "SHORT_USER_SERIALIZER": "moses.serializers.PublicCustomUserSerializer",
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
     "REQUIRE_EMAIL_CONFIRMATION": True,
