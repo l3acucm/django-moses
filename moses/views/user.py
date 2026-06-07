@@ -298,7 +298,9 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_or_email = request.GET.get('value', None)
         user = CustomUser.objects.filter(Q(email=phone_or_email) | Q(phone_number=phone_or_email)).first()
         if user:
-            return Response(moses_settings.SHORT_USER_SERIALIZER(user, context=self.get_serializer_context()).data)
+            from moses.serializers import PublicCustomUserSerializer
+            serializer_class = moses_settings.SHORT_USER_SERIALIZER or PublicCustomUserSerializer
+            return Response(serializer_class(user, context=self.get_serializer_context()).data)
         else:
             raise CustomAPIException({
                 '': [
