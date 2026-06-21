@@ -13,7 +13,10 @@ def request_passes_test(test_func):
         def _wrapped_view(view, request, *args, **kwargs):
             if test_func(request):
                 return view_func(view, request, *args, **kwargs)
-            return Response({'error': _("OTP not provided")}, status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {'errors': {'__all__': [_("OTP not provided")]}, 'data': {}},
+                status.HTTP_401_UNAUTHORIZED,
+            )
         return _wrapped_view
     return decorator
 
