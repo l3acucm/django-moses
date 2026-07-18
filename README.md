@@ -211,6 +211,63 @@ Moses verifies Telegram auth data using the algorithm specified by Telegram:
 3. An HMAC-SHA-256 signature is computed and compared against the received `hash`.
 4. The `auth_date` is checked to prevent replay attacks.
 
+Message templates (SMS / email)
+--------------------------------
+
+All outgoing SMS and email texts are configurable through the `MESSAGE_TEMPLATES`
+setting — the same way the SMS transport is provided via `SEND_SMS_HANDLER`. You
+override **any subset** of the keys; the rest fall back to the built-in defaults.
+
+```python
+from django.utils.translation import gettext_lazy as _
+
+MOSES = {
+    ...
+    "MESSAGE_TEMPLATES": {
+        # business requirement: SMS must contain only the code
+        "PHONE_NUMBER_CONFIRMATION_PIN_BODY": "{pin}",
+        "PASSWORD_RESET_SMS_BODY": "{pin}",
+        # a localizable email body (needs your own .po/.mo — see i18n below)
+        "EMAIL_CONFIRMATION_PIN_BODY": _("Hi {user.first_name}! Your code is {pin}"),
+    },
+}
+```
+
+### Available keys
+
+| Key | Channel | Placeholders |
+|-----|---------|--------------|
+| `EMAIL_CONFIRMATION_PIN_TITLE` | email subject | `{pin}` |
+| `EMAIL_CONFIRMATION_PIN_BODY` | email body | `{pin}` |
+| `PHONE_NUMBER_CONFIRMATION_PIN_BODY` | **SMS** | `{pin}` |
+| `PASSWORD_RESET_PIN_TITLE` | email subject | `{pin}` |
+| `PASSWORD_RESET_EMAIL_BODY` | email body | `{pin}` |
+| `PASSWORD_RESET_SMS_BODY` | **SMS** | `{pin}` |
+| `PASSWORD_CHANGED_TITLE` / `PASSWORD_CHANGED_BODY` | email | `{domain}` |
+| `EMAIL_CHANGED_TITLE` / `EMAIL_CHANGED_BODY` | email | `{domain}` |
+| `PHONE_NUMBER_CHANGED_TITLE` / `PHONE_NUMBER_CHANGED_BODY` | email | `{domain}` |
+
+Password reset uses **separate** SMS and email bodies, so you can strip the SMS to
+a bare code while keeping the full email text.
+
+### Placeholders
+
+Templates are rendered with `str.format`. Always available: `{pin}`, `{user}` (and
+its attributes, e.g. `{user.first_name}`, `{user.email}`), and `{domain}`. Escape
+literal braces as `{{` / `}}`; referencing an undefined placeholder raises
+`KeyError` (surfacing the misconfiguration).
+
+### Internationalization
+
+Each template is resolved to the user's `preferred_language` before formatting.
+
+- A **plain string** (e.g. `"{pin}"`) is not translated — the same in every
+  language. This is exactly what you want for an SMS that is only a code.
+- To translate a template, wrap it in `gettext_lazy` and ship your own `.po/.mo`
+  catalogs (set `LOCALE_PATHS`, run `makemessages` + `compilemessages`). Moses does
+  not ship translation catalogs itself, so the built-in defaults render as their
+  English source text until you provide your own.
+
 Signals
 -------
 

@@ -3,20 +3,16 @@ from datetime import timedelta
 
 from django.conf import settings as django_settings
 from django.core.mail import send_mail
-from django.utils import translation, timezone
+from django.utils import timezone
 from django.utils.timezone import now
 
 from moses.common import error_codes
 from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
-from moses.constants import strings
 from moses.enums import Credential, SMSType
+from moses.services.messages import render_message
 from moses.services.sms import sms_unlock_time
 from moses.signals import phone_number_confirmed, email_confirmed
-
-
-def send_email_confirmation_message(email: str, body: str):
-    send_mail(str(strings.EMAIL_CONFIRMATION_PIN_TITLE), body, moses_settings.SENDER_EMAIL, [email])
 
 
 def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, candidate_pin_str: str):
@@ -101,8 +97,6 @@ def send_credential_confirmation_code(
 ):
     match credential_type:
         case Credential.PHONE_NUMBER:
-            send_function = moses_settings.SEND_SMS_HANDLER
-            message_body = str(strings.PHONE_NUMBER_CONFIRMATION_PIN_BODY)
             if candidate:
                 unlock_time_field = 'phone_number_candidate_confirmation_code_sms_unlocks_at'
                 credential_field = 'phone_number_candidate'
@@ -130,8 +124,6 @@ def send_credential_confirmation_code(
                     }
                 )
         case Credential.EMAIL:
-            send_function = send_email_confirmation_message
-            message_body = str(strings.EMAIL_CONFIRMATION_PIN_BODY)
             if candidate:
                 credential_field = 'email_candidate'
                 pin_field = 'email_candidate_confirmation_pin'
@@ -144,5 +136,13 @@ def send_credential_confirmation_code(
     if generate_new:
         setattr(user, pin_field, random.randint(100000, 999999))
     user.save()
-    with translation.override(user.preferred_language):
-        send_function(getattr(user, credential_field), message_body % getattr(user, pin_field))
+    pin = getattr(user, pin_field)
+    recipient = getattr(user, credential_field)
+    match credential_type:
+        case Credential.PHONE_NUMBER:
+            body = render_message('PHONE_NUMBER_CONFIRMATION_PIN_BODY', user, pin=pin)
+            moses_settings.SEND_SMS_HANDLER(recipient, body)
+        case Credential.EMAIL:
+            title = render_message('EMAIL_CONFIRMATION_PIN_TITLE', user, pin=pin)
+            body = render_message('EMAIL_CONFIRMATION_PIN_BODY', user, pin=pin)
+            send_mail(title, body, moses_settings.SENDER_EMAIL, [recipient])

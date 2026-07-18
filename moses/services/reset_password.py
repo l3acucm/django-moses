@@ -7,8 +7,8 @@ from django.utils import timezone
 from moses.common import error_codes
 from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
-from moses.constants import strings
 from moses.enums import SMSType, Credential
+from moses.services.messages import render_message
 from moses.services.sms import sms_unlock_time
 
 
@@ -18,8 +18,9 @@ def send_password_reset_code(user, credential: Credential) -> bool:
             if user.is_email_confirmed:
                 user.password_reset_code = random.randint(0, 1000000)
                 user.save()
-                message_body = str(strings.PASSWORD_RESET_PIN_BODY) % user.password_reset_code
-                send_mail(str(strings.PASSWORD_RESET_PIN_TITLE), message_body, moses_settings.SENDER_EMAIL, [user.email])
+                title = render_message('PASSWORD_RESET_PIN_TITLE', user, pin=user.password_reset_code)
+                body = render_message('PASSWORD_RESET_EMAIL_BODY', user, pin=user.password_reset_code)
+                send_mail(title, body, moses_settings.SENDER_EMAIL, [user.email])
                 return True
             return False
         case user.phone_number:
@@ -29,8 +30,8 @@ def send_password_reset_code(user, credential: Credential) -> bool:
                     user.password_reset_code_sms_unlocks_at = timezone.now() + timedelta(
                         seconds=moses_settings.PASSWORD_RESET_TIMEOUT_SECONDS)
                     user.save()
-                    message_body = str(strings.PASSWORD_RESET_PIN_BODY) % user.password_reset_code
-                    moses_settings.SEND_SMS_HANDLER(user.phone_number, message_body)
+                    body = render_message('PASSWORD_RESET_SMS_BODY', user, pin=user.password_reset_code)
+                    moses_settings.SEND_SMS_HANDLER(user.phone_number, body)
                     return True
                 else:
                     raise CustomAPIException(

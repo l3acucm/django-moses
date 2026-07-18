@@ -11,11 +11,16 @@ def get_random_pin_non_equal_to(pin_str):
 
 
 SENT_SMS = {}
+SENT_SMS_RAW = {}
 
 
 def remember_pin(to, body):
     numbers_in_body = re.findall(r'\d+', body)
     SENT_SMS[to] = int(numbers_in_body[0]) if len(numbers_in_body) else None
+
+
+def remember_raw_sms(to, body):
+    SENT_SMS_RAW[to] = body
 
 
 def get_random_mfa_key():

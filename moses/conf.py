@@ -4,6 +4,8 @@ from django.utils.functional import LazyObject
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext as _
 
+from moses.constants import strings
+
 MOSES_SETTINGS_NAMESPACE = "MOSES"
 
 
@@ -46,6 +48,7 @@ default_settings = {
     "TELEGRAM_BOT_TOKEN": None,
     "TELEGRAM_AUTH_TEMP_TOKEN_EXPIRY_MINUTES": 5,
     "TELEGRAM_AUTH_DATA_MAX_AGE_SECONDS": 300,
+    "MESSAGE_TEMPLATES": strings.DEFAULT_MESSAGE_TEMPLATES,
 }
 
 SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR", "SHORT_USER_SERIALIZER"]
@@ -68,6 +71,11 @@ class Settings:
     def _load_default_settings(self):
         for setting_name, setting_value in default_settings.items():
             if setting_name.isupper():
+                # Copy dict defaults so the in-place merge in _override_settings
+                # never mutates the module-level default_settings between
+                # Settings instances (e.g. across setting_changed reloads).
+                if isinstance(setting_value, dict):
+                    setting_value = dict(setting_value)
                 setattr(self, setting_name, setting_value)
 
     def _override_settings(self, overriden_settings: dict):

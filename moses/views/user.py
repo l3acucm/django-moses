@@ -5,9 +5,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db.models import Q
-from django.utils import translation
 from django.utils.timezone import now
-from django.utils.translation import gettext as _
 from djoser import signals, utils
 from djoser.compat import get_user_email
 from djoser.conf import settings as djoser_settings
@@ -25,6 +23,7 @@ from moses.decorators import otp_required
 from moses.enums import Credential
 from moses.models import CustomUser
 from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
+from moses.services.messages import render_message
 from moses.services.reset_password import send_password_reset_code
 
 User = get_user_model()
@@ -231,12 +230,11 @@ class UserViewSet(viewsets.ModelViewSet):
         self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
         if not moses_settings.EMAILS_DISABLED:
-            with translation.override(self.request.user.preferred_language):
-                send_mail(_("Password changed"),
-                          _(
-                              "Your password has been changed. "
-                              f"If it happened without your desire - contact us by email support@{djoser_settings.DOMAIN}."),
-                          'noreply@' + djoser_settings.DOMAIN, [self.request.user.email])
+            user = self.request.user
+            send_mail(
+                render_message('PASSWORD_CHANGED_TITLE', user),
+                render_message('PASSWORD_CHANGED_BODY', user),
+                'noreply@' + djoser_settings.DOMAIN, [user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 
@@ -417,13 +415,11 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         if False not in confirmation_result:
             if candidate_email:
-                with translation.override(request.user.preferred_language):
-                    send_mail(
-                        _("Email changed"),
-                        _(f"Your email has been changed. If it happened without your desire - "
-                          f"contact us by email support@{moses_settings.DOMAIN}."),
-                        'noreply@' + moses_settings.DOMAIN, [candidate_email]
-                    )
+                send_mail(
+                    render_message('EMAIL_CHANGED_TITLE', request.user),
+                    render_message('EMAIL_CHANGED_BODY', request.user),
+                    'noreply@' + moses_settings.DOMAIN, [candidate_email]
+                )
             return Response({'result': 'ok'})
         result = {}
         if confirmation_result[0] == False:
@@ -443,13 +439,11 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         if False not in confirmation_result:
             if candidate_phone_number and not moses_settings.EMAILS_DISABLED:
-                with translation.override(request.user.preferred_language):
-                    send_mail(
-                        _("Phone number changed"),
-                        _(f"Your phone number has been changed. If it happened without your desire - "
-                          f"contact us by email support@{moses_settings.DOMAIN}."),
-                        'noreply@' + moses_settings.DOMAIN, [request.user.email]
-                    )
+                send_mail(
+                    render_message('PHONE_NUMBER_CHANGED_TITLE', request.user),
+                    render_message('PHONE_NUMBER_CHANGED_BODY', request.user),
+                    'noreply@' + moses_settings.DOMAIN, [request.user.email]
+                )
             return Response(
                 {
                     'success': True
