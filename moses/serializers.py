@@ -350,6 +350,16 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
+        if moses_settings.REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN and not self.user.is_phone_number_confirmed:
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(kwargs={}, code=error_codes.PHONE_NUMBER_NOT_CONFIRMED)
+                    ]
+                },
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+
         data = {}
 
         refresh = self.get_token(self.user)
@@ -386,9 +396,15 @@ class ResetPasswordSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         validated_data = super().validate(attrs)
+        if moses_settings.CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION:
+            credential_q = Q(phone_number=validated_data['credential']) | Q(
+                email=validated_data['credential'])
+        else:
+            credential_q = Q(
+                phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(
+                email=validated_data['credential'], is_email_confirmed=True)
         if (user := CustomUser.objects.filter(
-                Q(phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(
-                    email=validated_data['credential'], is_email_confirmed=True),
+                credential_q,
                 site__domain=validated_data['domain'],
         ).first()) is None:
             raise CustomAPIException(

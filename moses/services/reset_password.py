@@ -13,9 +13,10 @@ from moses.services.sms import sms_unlock_time
 
 
 def send_password_reset_code(user, credential: Credential) -> bool:
+    bypass_confirmation = moses_settings.CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION
     match credential:
         case user.email:
-            if user.is_email_confirmed:
+            if user.is_email_confirmed or bypass_confirmation:
                 user.password_reset_code = random.randint(0, 1000000)
                 user.save()
                 title = render_message('PASSWORD_RESET_PIN_TITLE', user, pin=user.password_reset_code)
@@ -24,7 +25,7 @@ def send_password_reset_code(user, credential: Credential) -> bool:
                 return True
             return False
         case user.phone_number:
-            if user.is_phone_number_confirmed:
+            if user.is_phone_number_confirmed or bypass_confirmation:
                 if (sut:=sms_unlock_time(user, SMSType.PASSWORD_RESET)) is None or sut <= timezone.now():
                     user.password_reset_code = random.randint(100000, 999999)
                     user.password_reset_code_sms_unlocks_at = timezone.now() + timedelta(

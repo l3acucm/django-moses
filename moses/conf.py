@@ -32,6 +32,16 @@ default_settings = {
     "REQUIRE_EMAIL_CONFIRMATION": True,
     "EMAILS_DISABLED": False,
     "REQUIRE_PHONE_NUMBER_CONFIRMATION": True,
+    # Blocks login (token issuance) for users whose phone number isn't
+    # confirmed yet. Off it, confirmation can instead be enforced per-action
+    # via @moses.decorators.phone_number_confirmed_required.
+    "REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN": True,
+    # Off (default), ResetPasswordSerializer only matches a user whose phone
+    # (or email) is already confirmed — same credential a user needs to log
+    # in. On, an unconfirmed user can still request/complete a password
+    # reset; useful for apps where phone confirmation and password recovery
+    # are deliberately independent gates.
+    "CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION": False,
     "DOMAIN": None,
     "SENDER_EMAIL": None,
     "URL_PREFIX": None,

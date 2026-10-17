@@ -1,4 +1,5 @@
-from django.test import TestCase
+from django.conf import settings as django_settings
+from django.test import TestCase, override_settings
 from django.utils.timezone import now
 
 from moses.common import error_codes
@@ -80,3 +81,37 @@ class ResetPasswordTestCase(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['errors']['credential'][0]['error_code'],
                          error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+
+
+class ResetPasswordPhoneConfirmationGateTestCase(TestCase):
+    """MOSES['CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION'] (default
+    False) keeps ResetPasswordSerializer matching only a confirmed phone/email
+    — same as before this setting existed. On, an unconfirmed user can still
+    request a reset."""
+    fixtures = ['reset_password']
+
+    def setUp(self):
+        self.user1 = CustomUser.objects.get(id=1)
+        self.user1.is_phone_number_confirmed = False
+        self.user1.save()
+        utils.SENT_SMS = {}
+
+    def test_blocks_reset_by_default_when_phone_not_confirmed(self):
+        response = test_client.reset_password('+0', 'exists.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data['errors']['credential'][0]['error_code'],
+            error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+        self.assertNotIn('+0', utils.SENT_SMS)
+
+    # override_settings(MOSES=...) replaces the whole MOSES dict rather than
+    # merging into it, so it must carry the project's own settings (e.g.
+    # SEND_SMS_HANDLER) forward explicitly, not just the one flag under test.
+    @override_settings(MOSES={
+        **django_settings.MOSES,
+        'CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION': True,
+    })
+    def test_allows_reset_when_setting_enabled(self):
+        response = test_client.reset_password('+0', 'exists.com')
+        self.assertEqual(response.status_code, 204)
+        self.assertIn('+0', utils.SENT_SMS)
