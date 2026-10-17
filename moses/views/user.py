@@ -394,8 +394,16 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def request_phone_number_confirmation_pin(self, request):
-        send_credential_confirmation_code(request.user, Credential.PHONE_NUMBER)
-        send_credential_confirmation_code(request.user, Credential.PHONE_NUMBER, candidate=True)
+        # Resend the same code (an earlier, delayed message stays valid) —
+        # unless it was wiped to 0, e.g. by saving the profile with an
+        # unchanged number; sending "0" would leave the user stuck.
+        user = request.user
+        send_credential_confirmation_code(
+            user, Credential.PHONE_NUMBER, generate_new=not user.phone_number_confirmation_pin)
+        if user.phone_number_candidate:
+            send_credential_confirmation_code(
+                user, Credential.PHONE_NUMBER, candidate=True,
+                generate_new=not user.phone_number_candidate_confirmation_pin)
         return Response({})
 
     @action(["post"], detail=False)

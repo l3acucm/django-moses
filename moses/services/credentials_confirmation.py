@@ -45,7 +45,12 @@ def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, c
             }
         )
     received_pin, received_candidate_pin = int(main_pin_str or '0'), int(candidate_pin_str or '0')
-    is_main_pin_correct = received_pin == getattr(user, current_pin_field) or (django_settings.DEBUG and received_pin == 123456)
+    # A stored 0 means "no main code needed" — only valid while a candidate
+    # is being confirmed (its pin proves ownership). Without a candidate it
+    # is a wiped code, and an empty pin (parsed to 0) must not match it.
+    has_candidate = bool(getattr(user, candidate_credential_field))
+    stored_pin = getattr(user, current_pin_field)
+    is_main_pin_correct = received_pin == stored_pin and (stored_pin != 0 or has_candidate) or (django_settings.DEBUG and received_pin == 123456)
     is_candidate_pin_correct = None
     if getattr(user, candidate_credential_field):
         is_candidate_pin_correct = getattr(user, candidate_pin_field) == received_candidate_pin or (django_settings.DEBUG and received_candidate_pin == 123456)
@@ -97,6 +102,7 @@ def send_credential_confirmation_code(
 ):
     match credential_type:
         case Credential.PHONE_NUMBER:
+            attempts_field = 'phone_number_confirmation_attempts'
             if candidate:
                 unlock_time_field = 'phone_number_candidate_confirmation_code_sms_unlocks_at'
                 credential_field = 'phone_number_candidate'
@@ -124,6 +130,7 @@ def send_credential_confirmation_code(
                     }
                 )
         case Credential.EMAIL:
+            attempts_field = 'email_confirmation_attempts'
             if candidate:
                 credential_field = 'email_candidate'
                 pin_field = 'email_candidate_confirmation_pin'
@@ -135,6 +142,9 @@ def send_credential_confirmation_code(
 
     if generate_new:
         setattr(user, pin_field, random.randint(100000, 999999))
+    # Every sent code gets a fresh set of attempts; otherwise a user who
+    # mistyped it a few times is locked out for good.
+    setattr(user, attempts_field, 0)
     user.save()
     pin = getattr(user, pin_field)
     recipient = getattr(user, credential_field)
