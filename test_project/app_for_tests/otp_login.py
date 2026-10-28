@@ -210,6 +210,18 @@ class OtpVerifyTestCase(TestCase):
             phone_number_confirmation_attempts=0, phone_number_confirmation_pin=0)
         self.assertFalse(verify_login_code(stale, str(pin)))
 
+    def test_debug_master_code_is_not_accepted(self):
+        user = User(phone_number=P1, site=self.site)
+        user.set_unusable_password()
+        user.save()  # pin 0
+        with override_settings(DEBUG=True):
+            self.assertEqual(test_client.otp_verify(P1, '123456', 'a.com').status_code, 400)
+            pin = self.request_code()
+            if pin != 123456:
+                self.assertEqual(test_client.otp_verify(P1, '123456', 'a.com').status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_phone_number_confirmed)
+
     def test_inactive_user_gets_wrong_code(self):
         pin = self.request_code()
         User.objects.filter(phone_number=P1).update(is_active=False)

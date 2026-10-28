@@ -1,4 +1,3 @@
-from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.contrib.sites.models import Site
 from django.db import transaction
@@ -77,7 +76,7 @@ def verify_login_code(user: CustomUser, code: str) -> bool:
         except (TypeError, ValueError):
             received = 0
         pin = user.phone_number_confirmation_pin
-        if (received == pin and pin != 0) or (django_settings.DEBUG and received == 123456):
+        if received == pin and pin != 0:
             was_confirmed = user.is_phone_number_confirmed
             user.phone_number_confirmation_pin = 0
             user.phone_number_confirmation_attempts = 0
