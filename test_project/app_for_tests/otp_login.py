@@ -89,6 +89,32 @@ class OtpRequestTestCase(TestCase):
         self.assertFalse(User.objects.exists())
         self.assertEqual(utils.SENT_SMS, {})
 
+    def assert_invalid_phone(self, phone, moses=MOSES):
+        cache.clear()  # keep the per-IP limit out of the way
+        with override_settings(MOSES=moses):
+            response = test_client.otp_request(phone, 'a.com')
+        self.assertEqual(response.status_code, 400, phone)
+        self.assertEqual(response.data['errors']['phone_number'][0]['error_code'],
+                         error_codes.INVALID_PHONE_NUMBER)
+
+    def test_blank_or_too_long_phone_is_invalid_even_without_validator(self):
+        no_validator = {**MOSES, "PHONE_NUMBER_VALIDATOR": None}
+        for phone in ('', '+' + '9' * 20):
+            self.assert_invalid_phone(phone)
+            self.assert_invalid_phone(phone, no_validator)
+        self.assertFalse(User.objects.exists())
+
+    def test_non_string_inputs_are_400(self):
+        for phone in (996507000001, ['+996507000001'], {'a': 1}, None):
+            self.assert_invalid_phone(phone)
+        for domain in (1, ['a.com'], {'a': 1}):
+            cache.clear()
+            response = test_client.otp_request(P1, domain)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.data['errors']['domain'][0]['error_code'],
+                             error_codes.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+        self.assertFalse(User.objects.exists())
+
     def test_unknown_domain(self):
         response = test_client.otp_request(P1, 'nope.com')
         self.assertEqual(response.status_code, 400)
@@ -338,6 +364,21 @@ class OtpVerifyTestCase(TestCase):
     def test_ordinary_user_ignores_otp_field(self):
         pin = self.request_code()
         self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com', otp='garbage').status_code, 200)
+
+    def test_non_string_inputs_are_400(self):
+        import pyotp
+        pin = self.request_code()
+        bad = ({'a': 1}, ['x'], 1)
+        for value in bad:
+            for args in ((value, str(pin), 'a.com'), (P1, value, 'a.com'), (P1, str(pin), value)):
+                response = test_client.otp_verify(*args)
+                self.assertEqual(response.status_code, 400, args)
+                self.assertIn('code', response.data['errors'])
+        User.objects.filter(phone_number=P1).update(
+            mfa_secret_key=pyotp.random_base32(), phone_number_confirmation_attempts=0)
+        for value in bad:
+            response = test_client.otp_verify(P1, str(pin), 'a.com', otp=value)
+            self.assertEqual(self.otp_error(response), error_codes.INVALID_OTP)
 
     def test_inactive_user_gets_wrong_code(self):
         pin = self.request_code()

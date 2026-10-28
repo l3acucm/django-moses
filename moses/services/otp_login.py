@@ -19,6 +19,13 @@ def client_ip(request):
     return (meta.get(header) if header else None) or meta.get('REMOTE_ADDR')
 
 
+def text_field(request, name: str) -> str:
+    """A request field as a string; anything else (missing, number, list, dict) reads as ''."""
+    data = request.data
+    value = data.get(name) if isinstance(data, dict) else None
+    return value if isinstance(value, str) else ''
+
+
 def count_hit(key: str, window: int) -> int:
     """Fixed-window counter: add() sets the timeout only when the key is new."""
     cache.add(key, 0, timeout=window)
@@ -61,7 +68,9 @@ def send_login_code(user: CustomUser) -> None:
 
 def request_login_code(phone_number: str, domain: str) -> CustomUser:
     validator = moses_settings.PHONE_NUMBER_VALIDATOR
-    if validator and not validator(phone_number):
+    max_length = CustomUser._meta.get_field('phone_number').max_length
+    if (not phone_number or len(phone_number) > max_length
+            or (validator and not validator(phone_number))):
         raise CustomAPIException(
             {'phone_number': [KwargsError(
                 kwargs={'phone_number': phone_number}, code=error_codes.INVALID_PHONE_NUMBER)]}
