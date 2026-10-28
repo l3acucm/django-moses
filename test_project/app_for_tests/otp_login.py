@@ -185,6 +185,31 @@ class OtpVerifyTestCase(TestCase):
         self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
         self.assertEqual(self.received, [])
 
+    def test_stale_user_object_does_not_clobber_concurrent_changes(self):
+        from moses.services.otp_login import verify_login_code
+        pin = self.request_code()
+        stale = User.objects.get(phone_number=P1)
+        User.objects.filter(phone_number=P1).update(
+            phone_number_candidate='+996507000999', phone_number_candidate_confirmation_pin=111111)
+        self.assertTrue(verify_login_code(stale, str(pin)))
+        user = User.objects.get(phone_number=P1)
+        self.assertEqual(user.phone_number_candidate, '+996507000999')
+        self.assertEqual(user.phone_number_candidate_confirmation_pin, 111111)
+        self.assertTrue(user.is_phone_number_confirmed)
+
+    def test_attempts_are_read_from_db_not_stale_object(self):
+        from moses.common.exceptions import CustomAPIException
+        from moses.services.otp_login import verify_login_code
+        pin = self.request_code()
+        stale = User.objects.get(phone_number=P1)
+        User.objects.filter(phone_number=P1).update(phone_number_confirmation_attempts=4)
+        with self.assertRaises(CustomAPIException):
+            verify_login_code(stale, str(pin))
+        # a stale object must not let a used code succeed again
+        User.objects.filter(phone_number=P1).update(
+            phone_number_confirmation_attempts=0, phone_number_confirmation_pin=0)
+        self.assertFalse(verify_login_code(stale, str(pin)))
+
     def test_inactive_user_gets_wrong_code(self):
         pin = self.request_code()
         User.objects.filter(phone_number=P1).update(is_active=False)

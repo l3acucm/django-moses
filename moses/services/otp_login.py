@@ -63,25 +63,33 @@ def wrong_code_error() -> CustomAPIException:
 
 
 def verify_login_code(user: CustomUser, code: str) -> bool:
-    """Checks a login code; only the main phone pin is used, never the candidate."""
-    if user.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT:
-        raise CustomAPIException({'': [KwargsError(code=error_codes.ATTEMPTS_LIMIT_REACHED)]})
-    try:
-        received = int(code or 0)
-    except (TypeError, ValueError):
-        received = 0
-    pin = user.phone_number_confirmation_pin
-    if (received == pin and pin != 0) or (django_settings.DEBUG and received == 123456):
-        was_confirmed = user.is_phone_number_confirmed
-        user.phone_number_confirmation_pin = 0
-        user.phone_number_confirmation_attempts = 0
-        user.is_phone_number_confirmed = True
-        user.save()
-        if not was_confirmed:
-            phone_number_confirmed.send(
-                sender=user.__class__, user=user, phone_number=user.phone_number,
-                is_initial_confirmation=True)
-        return True
-    user.phone_number_confirmation_attempts += 1
-    user.save()
-    return False
+    """Checks a login code; only the main phone pin is used, never the candidate.
+
+    Runs on a row-locked fresh copy so parallel guesses can't lose attempt
+    increments or reuse a code, and writes only the fields it changes.
+    """
+    with transaction.atomic():
+        user = CustomUser.objects.select_for_update().get(pk=user.pk)
+        if user.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT:
+            raise CustomAPIException({'': [KwargsError(code=error_codes.ATTEMPTS_LIMIT_REACHED)]})
+        try:
+            received = int(code or 0)
+        except (TypeError, ValueError):
+            received = 0
+        pin = user.phone_number_confirmation_pin
+        if (received == pin and pin != 0) or (django_settings.DEBUG and received == 123456):
+            was_confirmed = user.is_phone_number_confirmed
+            user.phone_number_confirmation_pin = 0
+            user.phone_number_confirmation_attempts = 0
+            user.is_phone_number_confirmed = True
+            user.save(update_fields=[
+                'phone_number_confirmation_pin', 'phone_number_confirmation_attempts',
+                'is_phone_number_confirmed'])
+            if not was_confirmed:
+                phone_number_confirmed.send(
+                    sender=user.__class__, user=user, phone_number=user.phone_number,
+                    is_initial_confirmation=True)
+            return True
+        user.phone_number_confirmation_attempts += 1
+        user.save(update_fields=['phone_number_confirmation_attempts'])
+        return False
