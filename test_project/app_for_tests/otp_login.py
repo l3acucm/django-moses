@@ -82,7 +82,7 @@ class OtpRequestTestCase(TestCase):
             self.assertEqual(call(P4, '4.4.4.4'), 429)
 
     def test_default_has_no_ip_limit(self):
-        with override_settings(MOSES={**settings.MOSES, "PHONE_OTP_LOGIN": True}):
+        with override_settings(MOSES={k: v for k, v in MOSES.items() if k != "PHONE_OTP_REQUEST_IP_LIMIT"}):
             for i in range(5):
                 response = test_client.otp_request('+99650700010%d' % i, 'a.com', ip='1.1.1.1')
                 self.assertEqual(response.status_code, 200)
