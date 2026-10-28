@@ -333,6 +333,7 @@ MOSES = {
     ...
     'PHONE_OTP_LOGIN': True,
     'PHONE_OTP_REQUEST_IP_LIMIT': (20, 3600),  # optional: (count, seconds) per client IP, default None
+    'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400),  # optional: codes sent per (site, phone), default None
 }
 ```
 

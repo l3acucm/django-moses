@@ -40,6 +40,8 @@ default_settings = {
     "PHONE_OTP_LOGIN": False,
     # (max_requests, window_seconds) per client IP for otp_request; None = no limit.
     "PHONE_OTP_REQUEST_IP_LIMIT": None,
+    # (max_codes, window_seconds) of codes sent per (site, phone) by otp_request; None = no cap.
+    "PHONE_OTP_CODES_PER_PHONE_LIMIT": None,
     # Off (default), ResetPasswordSerializer only matches a user whose phone
     # (or email) is already confirmed — same credential a user needs to log
     # in. On, an unconfirmed user can still request/complete a password

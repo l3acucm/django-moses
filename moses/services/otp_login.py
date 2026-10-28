@@ -19,19 +19,40 @@ def client_ip(request):
     return (meta.get(header) if header else None) or meta.get('REMOTE_ADDR')
 
 
+def count_hit(key: str, window: int) -> int:
+    """Fixed-window counter: add() sets the timeout only when the key is new."""
+    cache.add(key, 0, timeout=window)
+    return cache.incr(key)
+
+
 def check_request_ip_limit(request) -> None:
     limit = moses_settings.PHONE_OTP_REQUEST_IP_LIMIT
     if limit is None:
         return
     max_requests, window = limit
-    key = f'moses:otp_ip:{client_ip(request)}'
-    # Fixed window: add() sets the timeout only when the key is new.
-    cache.add(key, 0, timeout=window)
-    if cache.incr(key) > max_requests:
+    if count_hit(f'moses:otp_ip:{client_ip(request)}', window) > max_requests:
         raise CustomAPIException(
             {'': [KwargsError(code=error_codes.TOO_FREQUENT_SMS_REQUESTS)]},
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
+
+
+def send_login_code(user: CustomUser) -> None:
+    """Sends a code, refusing once PHONE_OTP_CODES_PER_PHONE_LIMIT codes went out in the window.
+
+    Only sent codes are counted; a request refused by the resend pause raises
+    before the hit.
+    """
+    limit = moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT
+    key = f'moses:otp_phone:{user.site.domain}:{user.phone_number}'
+    if limit is not None and cache.get(key, 0) >= limit[0]:
+        raise CustomAPIException(
+            {'': [KwargsError(code=error_codes.PHONE_OTP_CODES_LIMIT_REACHED)]},
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    send_credential_confirmation_code(user, Credential.PHONE_NUMBER, generate_new=True)
+    if limit is not None:
+        count_hit(key, limit[1])
 
 
 def request_login_code(phone_number: str, domain: str) -> CustomUser:
@@ -53,7 +74,7 @@ def request_login_code(phone_number: str, domain: str) -> CustomUser:
             user = CustomUser(phone_number=phone_number, site=site)
             user.set_unusable_password()
             user.save()
-        send_credential_confirmation_code(user, Credential.PHONE_NUMBER, generate_new=True)
+        send_login_code(user)
     return user
 
 

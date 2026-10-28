@@ -88,6 +88,54 @@ class OtpRequestTestCase(TestCase):
                 self.assertEqual(response.status_code, 200)
 
 
+def expire_pause(phone):
+    User.objects.filter(phone_number=phone).update(phone_number_confirmation_code_sms_unlocks_at=None)
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None,
+                          "PHONE_OTP_CODES_PER_PHONE_LIMIT": (3, 86400)})
+class OtpPerPhoneLimitTestCase(TestCase):
+    def setUp(self):
+        Site.objects.create(domain='a.com')
+        Site.objects.create(domain='b.com')
+        utils.SENT_SMS = {}
+        utils.SENT_SMS_RAW = {}
+        cache.clear()
+
+    def send(self, phone=P1, domain='a.com'):
+        expire_pause(phone)
+        return test_client.otp_request(phone, domain)
+
+    def test_fourth_code_is_refused(self):
+        for _ in range(3):
+            self.assertEqual(self.send().status_code, 200)
+        utils.SENT_SMS = {}
+        response = self.send()
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(code(response), error_codes.PHONE_OTP_CODES_LIMIT_REACHED)
+        self.assertEqual(utils.SENT_SMS, {})
+        # other phone, and same phone on another site, are counted separately
+        self.assertEqual(self.send(P2).status_code, 200)
+        self.assertEqual(self.send(P1, 'b.com').status_code, 200)
+
+    def test_request_refused_by_pause_does_not_count(self):
+        self.assertEqual(self.send().status_code, 200)
+        self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 400)  # inside the pause
+        self.assertEqual(self.send().status_code, 200)
+        self.assertEqual(self.send().status_code, 200)
+        self.assertEqual(self.send().status_code, 429)
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None})
+class OtpPerPhoneDefaultTestCase(TestCase):
+    def test_default_has_no_per_phone_cap(self):
+        Site.objects.create(domain='a.com')
+        cache.clear()
+        for _ in range(5):
+            expire_pause(P1)
+            self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 200)
+
+
 class OtpFlagOffTestCase(TestCase):
     def test_flag_off_is_404(self):
         Site.objects.create(domain='a.com')
