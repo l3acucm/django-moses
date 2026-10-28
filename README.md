@@ -338,14 +338,18 @@ MOSES = {
 ```
 
 **POST `/moses/users/otp_request/`** `{"phone_number": "+996...", "domain": "example.com"}` -> `{}`.
-Creates the user (unusable password) if the number is new and sends a code. Too-frequent requests per phone or per IP
-(over `PHONE_OTP_REQUEST_IP_LIMIT`, answered 429) return `too_frequent_sms_requests`.
+Creates the user (unusable password) if the number is new and sends a code; an inactive user gets the same `{}` but no
+code. A blank, too long (over 20 chars) or validator-rejected number gives 400 `invalid_phone_number`; an unknown domain
+gives 400 `site_with_domain_does_not_exist`. `too_frequent_sms_requests` is 400 for the per-phone resend pause
+(`PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD`) and 429 over `PHONE_OTP_REQUEST_IP_LIMIT`. Over
+`PHONE_OTP_CODES_PER_PHONE_LIMIT` the answer is 429 `phone_otp_codes_limit_reached`; only codes actually sent count.
 
 **POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "..."}`.
 A wrong or unknown code gives 400 `{"code": [incorrect_confirmation_pin]}`; too many attempts give `attempts_limit_reached`.
 A superuser or a user with an MFA key must also send `"otp"` (their TOTP); a missing or wrong one gives 400
 `{"otp": [invalid_otp]}`, costs an attempt and keeps the SMS code valid. A superuser without an MFA key can't log in
-this way. There is no DEBUG master code.
+this way. There is no DEBUG master code. `phone_number_confirmed` receivers run inside the verify transaction, under a
+row lock on the user: keep them quick, and an exception in one fails the login.
 
 While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
 `reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
@@ -353,4 +357,4 @@ While the flag is on, these return 404: user create (`POST /moses/users/`), `set
 Both limits count in Django's cache, so it must be shared and atomic (Redis or Memcached); LocMem is per process.
 
 The per-IP limit uses `IP_HEADER`: it must be a header your reverse proxy overwrites (not one the client can set),
-otherwise the limit can be bypassed by spoofing it.
+otherwise the limit can be bypassed by spoofing it. If `IP_HEADER` is set but missing on a request, `REMOTE_ADDR` is used.
