@@ -22,7 +22,11 @@ def client_ip(request):
 def count_hit(key: str, window: int) -> int:
     """Fixed-window counter: add() sets the timeout only when the key is new."""
     cache.add(key, 0, timeout=window)
-    return cache.incr(key)
+    try:
+        return cache.incr(key)
+    except ValueError:  # expired between add and incr, or the backend lost it
+        cache.set(key, 1, window)
+        return 1
 
 
 def check_request_ip_limit(request) -> None:

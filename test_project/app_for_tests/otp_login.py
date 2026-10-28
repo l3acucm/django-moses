@@ -88,6 +88,17 @@ class OtpRequestTestCase(TestCase):
                 self.assertEqual(response.status_code, 200)
 
 
+class CountHitTestCase(TestCase):
+    def test_key_gone_between_add_and_incr_counts_as_one(self):
+        from unittest import mock
+        from moses.services.otp_login import count_hit
+        cache.clear()
+        with mock.patch.object(cache, 'add'):  # add() "succeeds" but the key isn't there
+            self.assertEqual(count_hit('moses:test', 60), 1)
+        self.assertEqual(cache.get('moses:test'), 1)
+        self.assertEqual(count_hit('moses:test', 60), 2)
+
+
 def expire_pause(phone):
     User.objects.filter(phone_number=phone).update(phone_number_confirmation_code_sms_unlocks_at=None)
 

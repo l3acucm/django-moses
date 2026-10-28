@@ -350,5 +350,7 @@ this way. There is no DEBUG master code.
 While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
 `reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
 
+Both limits count in Django's cache, so it must be shared and atomic (Redis or Memcached); LocMem is per process.
+
 The per-IP limit uses `IP_HEADER`: it must be a header your reverse proxy overwrites (not one the client can set),
 otherwise the limit can be bypassed by spoofing it.
