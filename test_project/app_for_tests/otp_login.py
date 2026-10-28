@@ -2,7 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 
 from moses.common import error_codes
 from test_project.app_for_tests import APIClient
@@ -128,6 +128,39 @@ class OtpRequestTestCase(TestCase):
             for i in range(5):
                 response = test_client.otp_request('+99650700010%d' % i, 'a.com', ip='1.1.1.1')
                 self.assertEqual(response.status_code, 200)
+
+
+@override_settings(MOSES=MOSES)
+class OtpRequestRaceTestCase(TransactionTestCase):
+    def test_parallel_first_request_reuses_the_committed_row(self):
+        import threading
+        from django.db import connection
+        from django.db.models.signals import pre_save
+        site = Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        cache.clear()
+        fired = []
+
+        def insert_from_another_connection():
+            other = User(phone_number=P1, site=site)
+            other.set_unusable_password()
+            other.save()
+            connection.close()
+
+        def competing_insert(sender, instance, **kwargs):
+            if instance._state.adding and not fired:
+                fired.append(1)
+                thread = threading.Thread(target=insert_from_another_connection)
+                thread.start()
+                thread.join()
+
+        pre_save.connect(competing_insert, sender=User)
+        self.addCleanup(pre_save.disconnect, competing_insert, sender=User)
+        response = test_client.otp_request(P1, 'a.com')
+        self.assertEqual(fired, [1])
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(phone_number=P1)
+        self.assertEqual(utils.SENT_SMS[P1], user.phone_number_confirmation_pin)
 
 
 class CountHitTestCase(TestCase):

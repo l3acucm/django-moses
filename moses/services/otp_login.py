@@ -1,4 +1,5 @@
 import pyotp
+from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
 from django.contrib.sites.models import Site
 from django.db import transaction
@@ -82,11 +83,11 @@ def request_login_code(phone_number: str, domain: str) -> CustomUser:
                 kwargs={'domain': domain}, code=error_codes.SITE_WITH_DOMAIN_DOES_NOT_EXIST)]}
         )
     with transaction.atomic():
-        user = CustomUser.objects.filter(site=site, phone_number=phone_number).first()
-        if user is None:
-            user = CustomUser(phone_number=phone_number, site=site)
-            user.set_unusable_password()
-            user.save()
+        # Row-locked, so parallel requests for one phone run one at a time.
+        # get_or_create inserts in a savepoint and, if a parallel first
+        # request won the insert (IntegrityError), re-fetches its row.
+        user, _ = CustomUser.objects.select_for_update().get_or_create(
+            site=site, phone_number=phone_number, defaults={'password': make_password(None)})
         send_login_code(user)
     return user
 
