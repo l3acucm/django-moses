@@ -66,11 +66,14 @@ class APIClient:
         )
         return UserViewSet.as_view({'post': 'otp_request'})(request)
 
-    def otp_verify(self, phone_number, code, domain):
+    def otp_verify(self, phone_number, code, domain, otp=None):
         from moses.views.user import UserViewSet
+        data = {'phone_number': phone_number, 'code': code, 'domain': domain}
+        if otp is not None:
+            data['otp'] = otp
         request = drf_request_factory.post(
             reverse('moses:customuser-otp-verify'),
-            json.dumps({'phone_number': phone_number, 'code': code, 'domain': domain}),
+            json.dumps(data),
             content_type='application/json',
         )
         return UserViewSet.as_view({'post': 'otp_verify'})(request)

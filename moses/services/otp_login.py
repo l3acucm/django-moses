@@ -1,3 +1,4 @@
+import pyotp
 from django.core.cache import cache
 from django.contrib.sites.models import Site
 from django.db import transaction
@@ -61,11 +62,20 @@ def wrong_code_error() -> CustomAPIException:
         {'code': [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]})
 
 
-def verify_login_code(user: CustomUser, code: str) -> bool:
+def totp_ok(user: CustomUser, otp) -> bool:
+    """Strict second factor for OTP login: no DEBUG bypass, a superuser must have a key."""
+    if not user.mfa_secret_key:
+        return not user.is_superuser
+    return isinstance(otp, str) and pyotp.TOTP(user.mfa_secret_key).verify(otp)
+
+
+def verify_login_code(user: CustomUser, code: str, otp=None) -> bool:
     """Checks a login code; only the main phone pin is used, never the candidate.
 
     Runs on a row-locked fresh copy so parallel guesses can't lose attempt
     increments or reuse a code, and writes only the fields it changes.
+    A superuser or a user with an MFA key also needs a valid TOTP `otp`; a
+    missing or wrong one costs an attempt but leaves the SMS code usable.
     """
     with transaction.atomic():
         user = CustomUser.objects.select_for_update().get(pk=user.pk)
@@ -76,7 +86,8 @@ def verify_login_code(user: CustomUser, code: str) -> bool:
         except (TypeError, ValueError):
             received = 0
         pin = user.phone_number_confirmation_pin
-        if received == pin and pin != 0:
+        code_ok = received == pin and pin != 0
+        if code_ok and totp_ok(user, otp):
             was_confirmed = user.is_phone_number_confirmed
             user.phone_number_confirmation_pin = 0
             user.phone_number_confirmation_attempts = 0
@@ -91,4 +102,7 @@ def verify_login_code(user: CustomUser, code: str) -> bool:
             return True
         user.phone_number_confirmation_attempts += 1
         user.save(update_fields=['phone_number_confirmation_attempts'])
-        return False
+        if not code_ok:
+            return False
+    # Raised outside the atomic block so the attempt increment is committed.
+    raise CustomAPIException({'otp': [KwargsError(code=error_codes.INVALID_OTP)]})

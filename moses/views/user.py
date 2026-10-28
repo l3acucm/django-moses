@@ -385,7 +385,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Unknown and inactive users look exactly like a wrong code.
         if user is None or not user.is_active:
             raise otp_login.wrong_code_error()
-        if not otp_login.verify_login_code(user, request.data.get('code', '')):
+        if not otp_login.verify_login_code(user, request.data.get('code', ''), request.data.get('otp')):
             raise otp_login.wrong_code_error()
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})

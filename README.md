@@ -342,6 +342,9 @@ Creates the user (unusable password) if the number is new and sends a code. Too-
 
 **POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "..."}`.
 A wrong or unknown code gives 400 `{"code": [incorrect_confirmation_pin]}`; too many attempts give `attempts_limit_reached`.
+A superuser or a user with an MFA key must also send `"otp"` (their TOTP); a missing or wrong one gives 400
+`{"otp": [invalid_otp]}`, costs an attempt and keeps the SMS code valid. A superuser without an MFA key can't log in
+this way. There is no DEBUG master code.
 
 While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
 `reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.

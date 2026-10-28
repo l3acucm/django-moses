@@ -222,6 +222,48 @@ class OtpVerifyTestCase(TestCase):
         user.refresh_from_db()
         self.assertFalse(user.is_phone_number_confirmed)
 
+    def otp_error(self, response):
+        self.assertEqual(response.status_code, 400)
+        return response.data['errors']['otp'][0]['error_code']
+
+    def test_superuser_without_mfa_key_is_refused(self):
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(is_superuser=True)
+        self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
+                         error_codes.INVALID_OTP)
+        with override_settings(DEBUG=True):
+            self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com', otp='000000')),
+                             error_codes.INVALID_OTP)
+        user = User.objects.get(phone_number=P1)
+        self.assertFalse(user.is_phone_number_confirmed)
+        self.assertEqual(user.phone_number_confirmation_pin, pin)
+
+    def test_mfa_user_needs_totp(self):
+        import pyotp
+        key = pyotp.random_base32()
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
+                         error_codes.INVALID_OTP)
+        # pin not consumed: the same SMS code works with a valid TOTP
+        response = test_client.otp_verify(P1, str(pin), 'a.com', otp=pyotp.TOTP(key).now())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.data), {'access', 'refresh'})
+
+    def test_wrong_totp_counts_an_attempt(self):
+        import pyotp
+        key = pyotp.random_base32()
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        wrong = '000000' if pyotp.TOTP(key).now() != '000000' else '111111'
+        self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com', otp=wrong)),
+                         error_codes.INVALID_OTP)
+        self.assertEqual(User.objects.get(phone_number=P1).phone_number_confirmation_attempts, 1)
+
+    def test_ordinary_user_ignores_otp_field(self):
+        pin = self.request_code()
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com', otp='garbage').status_code, 200)
+
     def test_inactive_user_gets_wrong_code(self):
         pin = self.request_code()
         User.objects.filter(phone_number=P1).update(is_active=False)
