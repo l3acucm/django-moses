@@ -81,6 +81,22 @@ class OtpRequestTestCase(TestCase):
             self.assertEqual([call(P1, '1.1.1.1'), call(P2, '2.2.2.2'), call(P3, '3.3.3.3')], [200] * 3)
             self.assertEqual(call(P4, '4.4.4.4'), 429)
 
+    def test_invalid_phone_number(self):
+        response = test_client.otp_request('+99650', 'a.com')  # the test validator rejects it
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['phone_number'][0]['error_code'],
+                         error_codes.INVALID_PHONE_NUMBER)
+        self.assertFalse(User.objects.exists())
+        self.assertEqual(utils.SENT_SMS, {})
+
+    def test_unknown_domain(self):
+        response = test_client.otp_request(P1, 'nope.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['domain'][0]['error_code'],
+                         error_codes.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+        self.assertFalse(User.objects.exists())
+        self.assertEqual(utils.SENT_SMS, {})
+
     def test_default_has_no_ip_limit(self):
         with override_settings(MOSES={k: v for k, v in MOSES.items() if k != "PHONE_OTP_REQUEST_IP_LIMIT"}):
             for i in range(5):
@@ -341,14 +357,21 @@ class PasswordPathsTestCase(TestCase):
     def setUp(self):
         Site.objects.create(domain='a.com')
 
-    @override_settings(MOSES=MOSES)
-    def test_password_paths_404_when_on(self):
-        user = User.objects.create(phone_number=P2, site=Site.objects.get(domain='a.com'))
-        self.assertEqual(test_client.create_user(P1, 'pass12345', 'Ann', 'a@a.com', 'a.com')[1].status_code, 404)
-        self.assertEqual(test_client.login(P2, 'x', 'a.com')[1].status_code, 404)
-        self.assertEqual(test_client.update_password(user, 'x', 'y')[1].status_code, 404)
-        self.assertEqual(test_client.reset_password(P2, 'a.com').status_code, 404)
-        self.assertEqual(test_client.confirm_reset_password(P2, 'a.com', '1', 'y')[1].status_code, 404)
+    def password_path_statuses(self):
+        user = User.objects.get_or_create(phone_number=P2, site=Site.objects.get(domain='a.com'))[0]
+        return [
+            test_client.create_user(P1, 'pass12345', 'Ann', 'a@a.com', 'a.com')[1].status_code,
+            test_client.login(P2, 'x', 'a.com')[1].status_code,
+            test_client.update_password(user, 'x', 'y')[1].status_code,
+            test_client.reset_password(P2, 'a.com').status_code,
+            test_client.confirm_reset_password(P2, 'a.com', '1', 'y')[1].status_code,
+        ]
+
+    def test_password_paths_404_only_when_on(self):
+        with override_settings(MOSES=MOSES):
+            self.assertEqual(self.password_path_statuses(), [404] * 5)
+        statuses = self.password_path_statuses()
+        self.assertNotIn(404, statuses, statuses)
 
     def test_password_login_still_works_when_off(self):
         user = User(phone_number=P1, site=Site.objects.get(domain='a.com'), is_phone_number_confirmed=True)
