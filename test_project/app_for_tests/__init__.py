@@ -56,6 +56,25 @@ class APIClient:
             user = None
         return user, response
 
+    def otp_request(self, phone_number, domain, ip=None):
+        from moses.views.user import UserViewSet
+        request = drf_request_factory.post(
+            reverse('moses:customuser-otp-request'),
+            json.dumps({'phone_number': phone_number, 'domain': domain}),
+            content_type='application/json',
+            **({'REMOTE_ADDR': ip} if ip else {}),
+        )
+        return UserViewSet.as_view({'post': 'otp_request'})(request)
+
+    def otp_verify(self, phone_number, code, domain):
+        from moses.views.user import UserViewSet
+        request = drf_request_factory.post(
+            reverse('moses:customuser-otp-verify'),
+            json.dumps({'phone_number': phone_number, 'code': code, 'domain': domain}),
+            content_type='application/json',
+        )
+        return UserViewSet.as_view({'post': 'otp_verify'})(request)
+
     def login(self, phone_number, password, domain):
         request = drf_request_factory.post(
             reverse('moses:token_obtain_pair'),

@@ -36,6 +36,10 @@ default_settings = {
     # confirmed yet. Off it, confirmation can instead be enforced per-action
     # via @moses.decorators.phone_number_confirmed_required.
     "REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN": True,
+    # On, enables passwordless phone-OTP login (users/otp_request, otp_verify).
+    "PHONE_OTP_LOGIN": False,
+    # (max_requests, window_seconds) per client IP for otp_request; None = no limit.
+    "PHONE_OTP_REQUEST_IP_LIMIT": (20, 3600),
     # Off (default), ResetPasswordSerializer only matches a user whose phone
     # (or email) is already confirmed — same credential a user needs to log
     # in. On, an unconfirmed user can still request/complete a password

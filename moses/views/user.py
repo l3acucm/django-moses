@@ -23,6 +23,7 @@ from moses.decorators import otp_required
 from moses.enums import Credential
 from moses.models import CustomUser
 from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
+from moses.services import otp_login
 from moses.services.messages import render_message
 from moses.services.reset_password import send_password_reset_code
 
@@ -65,7 +66,7 @@ class UserViewSet(viewsets.ModelViewSet):
             self.permission_classes = djoser_settings.PERMISSIONS.password_reset_confirm
         elif self.action == "set_password":
             self.permission_classes = djoser_settings.PERMISSIONS.set_password
-        elif self.action in ("mfa_status", "credential_availability", "sms_unlock_time"):
+        elif self.action in ("mfa_status", "credential_availability", "sms_unlock_time", "otp_request", "otp_verify"):
             self.permission_classes = []
         elif self.action == "destroy" or (
                 self.action == "me" and self.request and self.request.method == "DELETE"
@@ -356,6 +357,15 @@ class UserViewSet(viewsets.ModelViewSet):
                 'success': 'mfa has been successfully disabled'
             }
         )
+
+    @action(["post"], detail=False)
+    def otp_request(self, request):
+        if not moses_settings.PHONE_OTP_LOGIN:
+            raise NotFound()
+        otp_login.check_request_ip_limit(request)
+        otp_login.request_login_code(
+            request.data.get('phone_number', ''), request.data.get('domain', ''))
+        return Response({})
 
     @action(["get"], detail=False)
     def sms_unlock_time(self, request):

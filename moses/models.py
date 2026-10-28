@@ -50,7 +50,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = _("Users")
         constraints = [
             models.UniqueConstraint(fields=['site', 'phone_number'], name='one_phone_number_per_site'),
-            models.UniqueConstraint(fields=['site', 'email'], name='one_email_per_site'),
+            # Blank email is allowed to repeat (phone-only users, e.g. OTP login).
+            models.UniqueConstraint(
+                fields=['site', 'email'], name='one_email_per_site', condition=~models.Q(email='')),
             models.UniqueConstraint(
                 fields=['site', 'google_sub'],
                 name='one_google_sub_per_site',
