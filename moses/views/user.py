@@ -38,6 +38,12 @@ class UserViewSet(viewsets.ModelViewSet):
     token_generator = default_token_generator
     lookup_field = djoser_settings.USER_ID_FIELD
 
+    def initial(self, request, *args, **kwargs):
+        if moses_settings.PHONE_OTP_LOGIN and self.action in (
+                "create", "set_password", "reset_password", "reset_password_confirm"):
+            raise NotFound()
+        super().initial(request, *args, **kwargs)
+
     def permission_denied(self, request, **kwargs):
         if (
                 djoser_settings.HIDE_USERS

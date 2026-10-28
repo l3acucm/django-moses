@@ -322,3 +322,29 @@ def handle_email_confirmed(sender, user, email, is_initial_confirmation, **kwarg
     else:
         print(f"User {user.id} changed their email to: {email}")
 ```
+
+## Phone OTP login
+
+Opt-in passwordless login by SMS code. Off by default; with the flag off nothing changes.
+Run `migrate` after upgrading to 0.18.0 (migration `0007_email_unique_unless_blank`: `(site, email)` is unique only when the email is non-blank).
+
+```python
+MOSES = {
+    ...
+    'PHONE_OTP_LOGIN': True,
+    'PHONE_OTP_REQUEST_IP_LIMIT': (20, 3600),  # optional: (count, seconds) per client IP, default None
+}
+```
+
+**POST `/moses/users/otp_request/`** `{"phone_number": "+996...", "domain": "example.com"}` -> `{}`.
+Creates the user (unusable password) if the number is new and sends a code. Too-frequent requests per phone or per IP
+(over `PHONE_OTP_REQUEST_IP_LIMIT`, answered 429) return `too_frequent_sms_requests`.
+
+**POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "..."}`.
+A wrong or unknown code gives 400 `{"code": [incorrect_confirmation_pin]}`; too many attempts give `attempts_limit_reached`.
+
+While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
+`reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
+
+The per-IP limit uses `IP_HEADER`: it must be a header your reverse proxy overwrites (not one the client can set),
+otherwise the limit can be bypassed by spoofing it.

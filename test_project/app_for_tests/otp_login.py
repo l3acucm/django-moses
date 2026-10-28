@@ -222,3 +222,23 @@ class OtpVerifyFlagOffTestCase(TestCase):
     def test_flag_off_is_404(self):
         Site.objects.create(domain='a.com')
         self.assertEqual(test_client.otp_verify(P1, '123456', 'a.com').status_code, 404)
+
+
+class PasswordPathsTestCase(TestCase):
+    def setUp(self):
+        Site.objects.create(domain='a.com')
+
+    @override_settings(MOSES=MOSES)
+    def test_password_paths_404_when_on(self):
+        user = User.objects.create(phone_number=P2, site=Site.objects.get(domain='a.com'))
+        self.assertEqual(test_client.create_user(P1, 'pass12345', 'Ann', 'a@a.com', 'a.com')[1].status_code, 404)
+        self.assertEqual(test_client.login(P2, 'x', 'a.com')[1].status_code, 404)
+        self.assertEqual(test_client.update_password(user, 'x', 'y')[1].status_code, 404)
+        self.assertEqual(test_client.reset_password(P2, 'a.com').status_code, 404)
+        self.assertEqual(test_client.confirm_reset_password(P2, 'a.com', '1', 'y')[1].status_code, 404)
+
+    def test_password_login_still_works_when_off(self):
+        user = User(phone_number=P1, site=Site.objects.get(domain='a.com'), is_phone_number_confirmed=True)
+        user.set_password('pass12345')
+        user.save()
+        self.assertEqual(test_client.login(P1, 'pass12345', 'a.com')[1].status_code, 200)
