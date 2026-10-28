@@ -92,3 +92,108 @@ class OtpFlagOffTestCase(TestCase):
     def test_flag_off_is_404(self):
         Site.objects.create(domain='a.com')
         self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 404)
+
+
+@override_settings(MOSES=MOSES)
+class OtpVerifyTestCase(TestCase):
+    def setUp(self):
+        self.site = Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        utils.SENT_SMS_RAW = {}
+        cache.clear()
+        self.received = []
+        from moses.signals import phone_number_confirmed
+        self.signal = phone_number_confirmed
+        self.signal.connect(self._receiver)
+        self.addCleanup(self.signal.disconnect, self._receiver)
+
+    def _receiver(self, sender, **kwargs):
+        self.received.append(kwargs)
+
+    def request_code(self, phone=P1):
+        self.assertEqual(test_client.otp_request(phone, 'a.com').status_code, 200)
+        return utils.SENT_SMS[phone]
+
+    def test_right_code_returns_tokens_and_confirms(self):
+        pin = self.request_code()
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.data), {'access', 'refresh'})
+        user = User.objects.get(phone_number=P1)
+        self.assertTrue(user.is_phone_number_confirmed)
+        self.assertEqual(user.phone_number_confirmation_pin, 0)
+        self.assertEqual(len(self.received), 1)
+        self.assertTrue(self.received[0]['is_initial_confirmation'])
+        self.assertEqual(self.received[0]['user'].pk, user.pk)
+
+    def test_code_works_once(self):
+        pin = self.request_code()
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('code', response.data['errors'])
+
+    def test_wrong_code_counts_attempts_then_limit(self):
+        pin = self.request_code()
+        wrong = str(pin + 1 if pin < 999999 else pin - 1)
+        for _ in range(4):
+            response = test_client.otp_verify(P1, wrong, 'a.com')
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.data['errors']['code'][0]['error_code'],
+                             error_codes.INCORRECT_CONFIRMATION_PIN)
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(code(response), error_codes.ATTEMPTS_LIMIT_REACHED)
+
+    def test_new_code_resets_attempts(self):
+        pin = self.request_code()
+        wrong = str(pin + 1 if pin < 999999 else pin - 1)
+        for _ in range(4):
+            test_client.otp_verify(P1, wrong, 'a.com')
+        User.objects.filter(phone_number=P1).update(phone_number_confirmation_code_sms_unlocks_at=None)
+        new_pin = self.request_code()
+        self.assertEqual(test_client.otp_verify(P1, str(new_pin), 'a.com').status_code, 200)
+
+    def test_zero_or_empty_code_never_matches(self):
+        user = User(phone_number=P1, site=self.site)
+        user.set_unusable_password()
+        user.save()
+        self.assertEqual(user.phone_number_confirmation_pin, 0)
+        for c in ('', '0'):
+            self.assertEqual(test_client.otp_verify(P1, c, 'a.com').status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_phone_number_confirmed)
+
+    def test_unknown_number_looks_like_wrong_code(self):
+        response = test_client.otp_verify(P2, '123456', 'a.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['code'][0]['error_code'],
+                         error_codes.INCORRECT_CONFIRMATION_PIN)
+
+    def test_candidate_change_untouched(self):
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(
+            phone_number_candidate='+996507000999', phone_number_candidate_confirmation_pin=111111)
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
+        user = User.objects.get(phone_number=P1)
+        self.assertEqual(user.phone_number_candidate, '+996507000999')
+        self.assertEqual(user.phone_number_candidate_confirmation_pin, 111111)
+
+    def test_already_confirmed_user_no_signal(self):
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(is_phone_number_confirmed=True)
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
+        self.assertEqual(self.received, [])
+
+    def test_inactive_user_gets_wrong_code(self):
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(is_active=False)
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('code', response.data['errors'])
+
+
+class OtpVerifyFlagOffTestCase(TestCase):
+    def test_flag_off_is_404(self):
+        Site.objects.create(domain='a.com')
+        self.assertEqual(test_client.otp_verify(P1, '123456', 'a.com').status_code, 404)

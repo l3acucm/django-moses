@@ -15,6 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from moses.common import error_codes
 from moses.common.exceptions import KwargsError, CustomAPIException
@@ -366,6 +367,22 @@ class UserViewSet(viewsets.ModelViewSet):
         otp_login.request_login_code(
             request.data.get('phone_number', ''), request.data.get('domain', ''))
         return Response({})
+
+    @action(["post"], detail=False)
+    def otp_verify(self, request):
+        if not moses_settings.PHONE_OTP_LOGIN:
+            raise NotFound()
+        user = CustomUser.objects.filter(
+            site__domain=request.data.get('domain', ''),
+            phone_number=request.data.get('phone_number', ''),
+        ).first()
+        # Unknown and inactive users look exactly like a wrong code.
+        if user is None or not user.is_active:
+            raise otp_login.wrong_code_error()
+        if not otp_login.verify_login_code(user, request.data.get('code', '')):
+            raise otp_login.wrong_code_error()
+        refresh = RefreshToken.for_user(user)
+        return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
 
     @action(["get"], detail=False)
     def sms_unlock_time(self, request):
