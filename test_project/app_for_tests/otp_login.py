@@ -53,6 +53,17 @@ class OtpRequestTestCase(TestCase):
         self.assertEqual(code(response), error_codes.TOO_FREQUENT_SMS_REQUESTS)
         self.assertEqual(User.objects.filter(phone_number=P1).count(), 1)
 
+    def test_inactive_user_gets_nothing_sent(self):
+        user = User(phone_number=P1, site=Site.objects.get(domain='a.com'), is_active=False)
+        user.set_unusable_password()
+        user.save()
+        response = test_client.otp_request(P1, 'a.com')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {})
+        self.assertEqual(utils.SENT_SMS, {})
+        user.refresh_from_db()
+        self.assertEqual(user.phone_number_confirmation_pin, 0)
+
     def test_same_phone_two_sites_two_users(self):
         self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 200)
         self.assertEqual(test_client.otp_request(P1, 'b.com').status_code, 200)

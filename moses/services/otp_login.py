@@ -88,7 +88,9 @@ def request_login_code(phone_number: str, domain: str) -> CustomUser:
         # request won the insert (IntegrityError), re-fetches its row.
         user, _ = CustomUser.objects.select_for_update().get_or_create(
             site=site, phone_number=phone_number, defaults={'password': make_password(None)})
-        send_login_code(user)
+        # An inactive user gets the same empty answer, but no code.
+        if user.is_active:
+            send_login_code(user)
     return user
 
 
