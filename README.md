@@ -344,7 +344,10 @@ gives 400 `site_with_domain_does_not_exist`. `too_frequent_sms_requests` is 400 
 (`PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD`) and 429 over `PHONE_OTP_REQUEST_IP_LIMIT`. Over
 `PHONE_OTP_CODES_PER_PHONE_LIMIT` the answer is 429 `phone_otp_codes_limit_reached`; only codes actually sent count.
 
-**POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "..."}`.
+**POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "...", "created": true}`.
+`created` is true exactly when this verify did the user's initial phone confirmation (the same moment
+`phone_number_confirmed` fires with `is_initial_confirmation=True`), so a client can show a one-time onboarding prompt
+for brand-new accounts; false for every later login. A failed TOTP doesn't confirm, so the next success still says true.
 A wrong or unknown code gives 400 `{"code": [incorrect_confirmation_pin]}`; too many attempts give `attempts_limit_reached`.
 A superuser or a user with an MFA key must also send `"otp"` (their TOTP); a missing or wrong one gives 400
 `{"otp": [invalid_otp]}`, costs an attempt and keeps the SMS code valid. A superuser without an MFA key can't log in

@@ -106,13 +106,15 @@ def totp_ok(user: CustomUser, otp) -> bool:
     return isinstance(otp, str) and pyotp.TOTP(user.mfa_secret_key).verify(otp)
 
 
-def verify_login_code(user: CustomUser, code: str, otp=None) -> bool:
+def verify_login_code(user: CustomUser, code: str, otp=None):
     """Checks a login code; only the main phone pin is used, never the candidate.
 
     Runs on a row-locked fresh copy so parallel guesses can't lose attempt
     increments or reuse a code, and writes only the fields it changes.
     A superuser or a user with an MFA key also needs a valid TOTP `otp`; a
     missing or wrong one costs an attempt but leaves the SMS code usable.
+    Returns None for a wrong code, else {'created': bool}: True when this verify
+    did the initial phone confirmation.
     """
     with transaction.atomic():
         user = CustomUser.objects.select_for_update().get(pk=user.pk)
@@ -136,10 +138,10 @@ def verify_login_code(user: CustomUser, code: str, otp=None) -> bool:
                 phone_number_confirmed.send(
                     sender=user.__class__, user=user, phone_number=user.phone_number,
                     is_initial_confirmation=True)
-            return True
+            return {'created': not was_confirmed}
         user.phone_number_confirmation_attempts += 1
         user.save(update_fields=['phone_number_confirmation_attempts'])
         if not code_ok:
-            return False
+            return None
     # Raised outside the atomic block so the attempt increment is committed.
     raise CustomAPIException({'otp': [KwargsError(code=error_codes.INVALID_OTP)]})

@@ -263,7 +263,7 @@ class OtpVerifyTestCase(TestCase):
         pin = self.request_code()
         response = test_client.otp_verify(P1, str(pin), 'a.com')
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(response.data), {'access', 'refresh'})
+        self.assertEqual(set(response.data), {'access', 'refresh', 'created'})
         user = User.objects.get(phone_number=P1)
         self.assertTrue(user.is_phone_number_confirmed)
         self.assertEqual(user.phone_number_confirmation_pin, 0)
@@ -393,7 +393,40 @@ class OtpVerifyTestCase(TestCase):
         # pin not consumed: the same SMS code works with a valid TOTP
         response = test_client.otp_verify(P1, str(pin), 'a.com', otp=pyotp.TOTP(key).now())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(response.data), {'access', 'refresh'})
+        self.assertEqual(set(response.data), {'access', 'refresh', 'created'})
+        self.assertIs(response.data['created'], True)
+
+    def test_created_true_on_initial_confirmation_then_false(self):
+        pin = self.request_code()
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertIs(response.data['created'], True)
+        utils.SENT_SMS = {}
+        cache.clear()
+        User.objects.filter(phone_number=P1).update(phone_number_confirmation_code_sms_unlocks_at=None)
+        pin = self.request_code()
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.data['created'], False)
+
+    def test_created_false_for_user_confirmed_beforehand(self):
+        user = User(phone_number=P1, site=self.site, is_phone_number_confirmed=True)
+        user.set_unusable_password()
+        user.save()
+        pin = self.request_code()
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.data['created'], False)
+
+    def test_created_true_after_totp_failure(self):
+        import pyotp
+        key = pyotp.random_base32()
+        pin = self.request_code()
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
+                         error_codes.INVALID_OTP)
+        self.assertFalse(User.objects.get(phone_number=P1).is_phone_number_confirmed)
+        response = test_client.otp_verify(P1, str(pin), 'a.com', otp=pyotp.TOTP(key).now())
+        self.assertIs(response.data['created'], True)
 
     def test_wrong_totp_counts_an_attempt(self):
         import pyotp

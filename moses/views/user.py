@@ -385,11 +385,12 @@ class UserViewSet(viewsets.ModelViewSet):
         # Unknown and inactive users look exactly like a wrong code.
         if user is None or not user.is_active:
             raise otp_login.wrong_code_error()
-        if not otp_login.verify_login_code(
-                user, otp_login.text_field(request, 'code'), otp_login.text_field(request, 'otp')):
+        result = otp_login.verify_login_code(
+            user, otp_login.text_field(request, 'code'), otp_login.text_field(request, 'otp'))
+        if result is None:
             raise otp_login.wrong_code_error()
         refresh = RefreshToken.for_user(user)
-        return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
+        return Response({'access': str(refresh.access_token), 'refresh': str(refresh), **result})
 
     @action(["get"], detail=False)
     def sms_unlock_time(self, request):
