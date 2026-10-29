@@ -49,14 +49,30 @@ def check_request_ip_limit(request) -> None:
         )
 
 
-def send_login_code(user: CustomUser) -> None:
-    """Sends a code, refusing once PHONE_OTP_CODES_PER_PHONE_LIMIT codes went out in the window.
+def phone_codes_key(user: CustomUser) -> str:
+    return f'moses:otp_phone:{user.site.domain}:{user.phone_number}'
 
-    Only sent codes are counted; a request refused by the resend pause raises
-    before the hit.
+
+def uncount_used_code(user: CustomUser) -> None:
+    """Takes a used code off the per-phone count (same key and window), never below 0."""
+    if moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT is None:
+        return
+    key = phone_codes_key(user)
+    try:
+        if cache.get(key, 0) > 0:
+            cache.decr(key)
+    except ValueError:  # the window expired in between
+        pass
+
+
+def send_login_code(user: CustomUser) -> None:
+    """Sends a code, refusing once PHONE_OTP_CODES_PER_PHONE_LIMIT unused codes went out in the window.
+
+    Only sent codes are counted, and a successful verify takes its code off the
+    count; a request refused by the resend pause raises before the hit.
     """
     limit = moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT
-    key = f'moses:otp_phone:{user.site.domain}:{user.phone_number}'
+    key = phone_codes_key(user)
     if limit is not None and cache.get(key, 0) >= limit[0]:
         raise CustomAPIException(
             {'': [KwargsError(code=error_codes.PHONE_OTP_CODES_LIMIT_REACHED)]},
@@ -142,6 +158,7 @@ def verify_login_code(user: CustomUser, code: str, otp=None):
             user.phone_number_confirmation_attempts = 0
             user.is_phone_number_confirmed = True
             user.save(update_fields=fields)
+            uncount_used_code(user)
             if not was_confirmed:
                 phone_number_confirmed.send(
                     sender=user.__class__, user=user, phone_number=user.phone_number,

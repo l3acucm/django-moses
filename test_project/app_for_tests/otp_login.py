@@ -217,6 +217,23 @@ class OtpPerPhoneLimitTestCase(TestCase):
         self.assertEqual(self.send(P2).status_code, 200)
         self.assertEqual(self.send(P1, 'b.com').status_code, 200)
 
+    def test_used_codes_do_not_count(self):
+        for _ in range(3):
+            self.assertEqual(self.send().status_code, 200)
+            response = test_client.otp_verify(P1, str(utils.SENT_SMS[P1]), 'a.com')
+            self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.send().status_code, 200)
+
+    def test_count_never_goes_below_zero(self):
+        user = User(phone_number=P1, site=Site.objects.get(domain='a.com'))
+        user.set_unusable_password()
+        user.phone_number_confirmation_pin = 123456
+        user.save()  # a code that was never counted (e.g. sent at registration)
+        self.assertEqual(test_client.otp_verify(P1, '123456', 'a.com').status_code, 200)
+        for _ in range(3):
+            self.assertEqual(self.send().status_code, 200)
+        self.assertEqual(self.send().status_code, 429)
+
     def test_request_refused_by_pause_does_not_count(self):
         self.assertEqual(self.send().status_code, 200)
         self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 400)  # inside the pause
