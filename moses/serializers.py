@@ -467,7 +467,8 @@ class ConfirmResetPasswordSerializer(PasswordSerializer):
                 site__domain=validated_data['domain'],
         ).first()) is not None:
             # Burns the code: a successful validate is the code's only use.
-            user = use_password_reset_code(user, validated_data['code'])
+            user = use_password_reset_code(
+                user, validated_data['code'], by_phone=validated_data['credential'] == user.phone_number)
         else:
             raise CustomAPIException(
                 {

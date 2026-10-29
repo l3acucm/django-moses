@@ -72,7 +72,7 @@ def send_password_reset_code(user, credential: Credential) -> bool:
             )
 
 
-def use_password_reset_code(user, code: int):
+def use_password_reset_code(user, code: int, by_phone: bool = True):
     """Checks a reset code on a row-locked fresh copy and returns it with the code burned.
 
     Mirrors verify_login_code: PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT wrong
@@ -89,7 +89,8 @@ def use_password_reset_code(user, code: int):
             user.password_reset_code = None
             user.password_reset_code_attempts = 0
             user.save(update_fields=['password_reset_code', 'password_reset_code_attempts'])
-            otp_login.uncount_used_code(user)
+            if by_phone:  # only phone reset codes were counted
+                otp_login.uncount_used_code(user)
             return user
         user.password_reset_code_attempts += 1
         if user.password_reset_code_attempts >= limit:

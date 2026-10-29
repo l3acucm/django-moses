@@ -1,3 +1,4 @@
+from django.urls import reverse
 from django.conf import settings as django_settings
 from django.test import TestCase, override_settings
 from django.utils.timezone import now
@@ -242,3 +243,24 @@ class ResetPasswordAttemptsColumnTestCase(TestCase):
                 "WHERE table_name = %s AND column_name = 'password_reset_code_attempts'",
                 [CustomUser._meta.db_table])
             self.assertEqual(cursor.fetchone()[0], '0')
+
+
+@override_settings(MOSES={**django_settings.MOSES, 'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400)})
+class ResetPasswordEmailDoesNotUncountTestCase(TestCase):
+    fixtures = ['reset_password']
+
+    def test_email_reset_leaves_phone_count(self):
+        from django.core.cache import cache
+        from moses.services.otp_login import phone_codes_key
+        cache.clear()
+        utils.SENT_SMS = {}
+        user = CustomUser.objects.get(id=1)
+        CustomUser.objects.filter(id=1).update(is_email_confirmed=True)
+        cache.set(phone_codes_key(user), 2, 86400)
+        self.assertEqual(test_client.reset_password('foo@foo.com', 'exists.com').status_code, 204)
+        code = CustomUser.objects.get(id=1).password_reset_code
+        r = self.client.post(reverse('moses:customuser-reset-password-confirm'), {
+            'credential': 'foo@foo.com', 'domain': 'exists.com', 'code': code, 'new_password': '123123123'},
+            content_type='application/json')
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertEqual(cache.get(phone_codes_key(user)), 2)
