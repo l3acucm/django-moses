@@ -347,8 +347,10 @@ code. A blank, too long (over 20 chars) or validator-rejected number gives 400 `
 gives 400 `site_with_domain_does_not_exist`. `too_frequent_sms_requests` is 400 for the per-phone resend pause
 (`PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD`) and 429 over `PHONE_OTP_REQUEST_IP_LIMIT`. Over
 `PHONE_OTP_CODES_PER_PHONE_LIMIT` the answer is 429 `phone_otp_codes_limit_reached`; only codes actually sent count,
-and a successful `otp_verify` takes its code off the count. The per-IP limit also covers user create, `reset_password`,
-`request_phone_number_confirmation_pin` and a profile update that sets a new phone number (one shared counter).
+and a successful `otp_verify` takes its code off the count. Password-reset codes sent to the phone share that count
+(`reset_password` answers the same 429; a successful `reset_password_confirm` takes its code off). The per-IP limit also
+covers user create, Google/Telegram sign-up completion, `reset_password`, `request_phone_number_confirmation_pin` and a
+profile update that sets a new phone number (one shared counter).
 
 **POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "...", "created": true}`.
 `created` is true exactly when this verify did the user's initial phone confirmation (the same moment
@@ -361,7 +363,9 @@ this way. There is no DEBUG master code. Exception: while the number is not conf
 TOTP, and that first successful verify drops the password, `google_sub`, `telegram_id` and MFA key (whoever attached
 them never proved the number). With `PHONE_OTP_CODE_TTL_SECONDS` a code older than that (counted from
 `phone_number_confirmation_pin_created_at`; `otp_login.login_code_expired(user)`) answers like a wrong code without
-costing an attempt. Failed verifies are counted per client IP with the `PHONE_OTP_REQUEST_IP_LIMIT` numbers; over it
+costing an attempt, and `request_phone_number_confirmation_pin` sends a new code instead of re-sending an expired
+one. Tokens are minted from the saved user, so with simplejwt's `CHECK_REVOKE_TOKEN` the first-proof verify ends the
+squatter's sessions and the new tokens stay valid. Failed verifies are counted per client IP with the `PHONE_OTP_REQUEST_IP_LIMIT` numbers; over it
 the IP gets 429 `too_frequent_sms_requests` before the user is looked up. `phone_number_confirmed` receivers run inside the verify transaction, under a
 row lock on the user: keep them quick, and an exception in one fails the login.
 
@@ -411,18 +415,27 @@ def wipe_profile(sender, user, **kwargs):
 
 ### 0.19.1
 
-Security fixes. Run `migrate` (migration `0008`: `password_reset_code_attempts`, `phone_number_confirmation_pin_created_at`).
+Security fixes. Run `migrate` (migration `0008`: `password_reset_code_attempts` with a database default of 0, and
+`phone_number_confirmation_pin_created_at`; both are safe while old processes still run).
 
 - Password-reset code: `PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT` wrong guesses burn it (then `attempts_limit_reached`
-  until a new code is sent), the right code works once. A new reset code restores the attempts.
+  until a new code is sent), the right code works once. A new reset code restores the attempts, so the real limit on
+  guessing is how many codes can be sent: phone reset codes now count in `PHONE_OTP_CODES_PER_PHONE_LIMIT` together with
+  login codes (only unused ones; a successful reset takes its code off), and the email branch now has the same
+  `PASSWORD_RESET_TIMEOUT_SECONDS` pause as the phone branch (they share `password_reset_code_sms_unlocks_at`). Set
+  `PHONE_OTP_CODES_PER_PHONE_LIMIT` if you keep `WITH_PASSWORD`: without it, reset codes are limited only by the pause.
 - `otp_verify` on a not yet confirmed number (non-staff): no TOTP asked; the password, `google_sub`, `telegram_id` and
-  MFA key set before the number was proven are cleared. Superusers, staff and confirmed users are unchanged.
+  MFA key set before the number was proven are cleared. Superusers, staff and confirmed users are unchanged. To also end
+  the squatter's existing JWTs, set simplejwt `SIMPLE_JWT['CHECK_REVOKE_TOKEN'] = True` (then any password change ends
+  that user's other sessions).
 - `PHONE_OTP_REQUEST_IP_LIMIT` now also applies to user create, `reset_password`, `request_phone_number_confirmation_pin`
-  and a profile update with a new phone number, and (as a separate count of failures) to `otp_verify`.
+  Google/Telegram sign-up completion and a profile update with a new phone number, and (as a separate count of
+  failures) to `otp_verify`.
 - `PHONE_OTP_CODES_PER_PHONE_LIMIT` counts only unused codes: a successful login takes its code off the count.
 - New `PHONE_OTP_CODE_TTL_SECONDS` (default `None`): login codes older than that are refused. Projects that set
   `phone_number_confirmation_pin` themselves must also set `phone_number_confirmation_pin_created_at`, or the code
-  counts as expired.
+  counts as expired. Re-sending the confirmation pin replaces an expired code.
+- A candidate pin of 0 never matches (the main pin already had this guard).
 - Confirming a number change onto a number held by a never-confirmed, non-staff user anonymizes that holder
   (`user_anonymized` fires) instead of a 500. `PATCH me` by an unconfirmed user onto a taken number gives 400
   `phone_number_already_registered_on_domain` instead of a 500.
