@@ -12,6 +12,11 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name='customuser',
+            name='phone_number_confirmation_pin_created_at',
+            field=models.DateTimeField(blank=True, null=True, verbose_name='Phone number confirm PIN created at'),
+        ),
+        migrations.AddField(
+            model_name='customuser',
             name='password_reset_code_attempts',
             field=models.PositiveSmallIntegerField(default=0, verbose_name='Password reset code attempts'),
         ),

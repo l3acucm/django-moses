@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 import pyotp
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
 from django.contrib.sites.models import Site
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 
 from moses.common import error_codes
@@ -122,6 +125,15 @@ def totp_ok(user: CustomUser, otp) -> bool:
     return isinstance(otp, str) and pyotp.TOTP(user.mfa_secret_key).verify(otp)
 
 
+def login_code_expired(user: CustomUser) -> bool:
+    """True when PHONE_OTP_CODE_TTL_SECONDS is set and the login code is older (or has no send time)."""
+    ttl = moses_settings.PHONE_OTP_CODE_TTL_SECONDS
+    if ttl is None:
+        return False
+    created_at = user.phone_number_confirmation_pin_created_at
+    return created_at is None or timezone.now() - created_at > timedelta(seconds=ttl)
+
+
 def verify_login_code(user: CustomUser, code: str, otp=None):
     """Checks a login code; only the main phone pin is used, never the candidate.
 
@@ -139,6 +151,8 @@ def verify_login_code(user: CustomUser, code: str, otp=None):
         user = CustomUser.objects.select_for_update().get(pk=user.pk)
         if user.phone_number_confirmation_attempts >= moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT:
             raise CustomAPIException({'': [KwargsError(code=error_codes.ATTEMPTS_LIMIT_REACHED)]})
+        if login_code_expired(user):
+            return None  # looks like a wrong code, but costs no attempt
         try:
             received = int(code or 0)
         except (TypeError, ValueError):

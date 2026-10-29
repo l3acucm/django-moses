@@ -91,6 +91,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         default=0,
         verbose_name=_("Phone number confirm attempts")
     )
+    # When phone_number_confirmation_pin was generated; PHONE_OTP_CODE_TTL_SECONDS counts from it.
+    phone_number_confirmation_pin_created_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_("Phone number confirm PIN created at")
+    )
     password_reset_code_sms_unlocks_at = models.DateTimeField(
         blank=True,
         null=True,

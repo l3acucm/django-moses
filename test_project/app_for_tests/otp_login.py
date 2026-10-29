@@ -645,3 +645,64 @@ class CodeSendingIpLimitTestCase(TestCase):
                                       if k != "PHONE_OTP_REQUEST_IP_LIMIT"}):
             for _ in range(4):
                 self.assertNotEqual(self.call('create', '1.1.1.1').status_code, 429)
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_CODE_TTL_SECONDS": 900})
+class OtpCodeTtlTestCase(TestCase):
+    def setUp(self):
+        Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        cache.clear()
+
+    def request_code(self):
+        self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 200)
+        return utils.SENT_SMS[P1]
+
+    def age_code(self, seconds):
+        from datetime import timedelta
+        from django.utils import timezone
+        User.objects.filter(phone_number=P1).update(
+            phone_number_confirmation_pin_created_at=timezone.now() - timedelta(seconds=seconds))
+
+    def test_fresh_code_works_and_send_time_is_stored(self):
+        from moses.services.otp_login import login_code_expired
+        pin = self.request_code()
+        user = User.objects.get(phone_number=P1)
+        self.assertIsNotNone(user.phone_number_confirmation_pin_created_at)
+        self.assertFalse(login_code_expired(user))
+        self.age_code(899)
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
+
+    def test_expired_code_looks_wrong_and_costs_no_attempt(self):
+        from moses.services.otp_login import login_code_expired
+        pin = self.request_code()
+        self.age_code(901)
+        self.assertTrue(login_code_expired(User.objects.get(phone_number=P1)))
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['code'][0]['error_code'],
+                         error_codes.INCORRECT_CONFIRMATION_PIN)
+        user = User.objects.get(phone_number=P1)
+        self.assertEqual(user.phone_number_confirmation_attempts, 0)
+        self.assertFalse(user.is_phone_number_confirmed)
+        # a new code works again
+        expire_pause(P1)
+        self.assertEqual(test_client.otp_verify(P1, str(self.request_code()), 'a.com').status_code, 200)
+
+    def test_pin_without_send_time_counts_as_expired(self):
+        from moses.services.otp_login import login_code_expired
+        self.request_code()
+        User.objects.filter(phone_number=P1).update(phone_number_confirmation_pin_created_at=None)
+        self.assertTrue(login_code_expired(User.objects.get(phone_number=P1)))
+
+    def test_no_ttl_by_default(self):
+        from moses.services.otp_login import login_code_expired
+        pin = self.request_code()
+        self.age_code(10 ** 6)
+        with override_settings(MOSES=MOSES):
+            self.assertFalse(login_code_expired(User.objects.get(phone_number=P1)))
+            self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com').status_code, 200)
+
+    def test_registration_code_gets_send_time(self):
+        user = User.objects.create_user(phone_number=P2, password='pass12345', site=Site.objects.get(domain='a.com'))
+        self.assertIsNotNone(user.phone_number_confirmation_pin_created_at)
