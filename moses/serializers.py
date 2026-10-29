@@ -1,4 +1,3 @@
-from django.conf import settings as django_settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
 from django.contrib.sites.models import Site
@@ -18,6 +17,7 @@ from moses.conf import settings as moses_settings
 from moses.enums import Credential
 from moses.models import CustomUser
 from moses.services.credentials_confirmation import send_credential_confirmation_code
+from moses.services.reset_password import use_password_reset_code
 from moses.validators import EmailValidator, PasswordValidator
 
 
@@ -461,17 +461,8 @@ class ConfirmResetPasswordSerializer(PasswordSerializer):
                 Q(phone_number=validated_data['credential']) | Q(email=validated_data['credential']),
                 site__domain=validated_data['domain'],
         ).first()) is not None:
-
-            if user.password_reset_code != validated_data['code'] and not (django_settings.DEBUG and validated_data['code'] == 123456):
-                raise CustomAPIException(
-                    {
-                        'code': [
-                            KwargsError(
-                                kwargs={},
-                                code=error_codes.INVALID_CONFIRMATION_CODE)
-                        ]
-                    }
-                )
+            # Burns the code: a successful validate is the code's only use.
+            user = use_password_reset_code(user, validated_data['code'])
         else:
             raise CustomAPIException(
                 {

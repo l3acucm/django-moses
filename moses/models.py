@@ -110,6 +110,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         null=True
     )
+    password_reset_code_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name=_("Password reset code attempts")
+    )
 
     first_name = models.CharField(max_length=200, verbose_name=_("First name"), blank=True)
     last_name = models.CharField(max_length=200, verbose_name=_("Last name"), blank=True)

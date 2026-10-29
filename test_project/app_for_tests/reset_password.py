@@ -3,6 +3,7 @@ from django.test import TestCase, override_settings
 from django.utils.timezone import now
 
 from moses.common import error_codes
+from moses.conf import settings as moses_settings
 from moses.models import CustomUser
 from test_project.app_for_tests import APIClient, utils
 
@@ -115,3 +116,59 @@ class ResetPasswordPhoneConfirmationGateTestCase(TestCase):
         response = test_client.reset_password('+0', 'exists.com')
         self.assertEqual(response.status_code, 204)
         self.assertIn('+0', utils.SENT_SMS)
+
+
+class ResetPasswordCodeAttemptsTestCase(TestCase):
+    """A reset code allows PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT wrong guesses, then
+    it is burned; the right code works once; a new reset code restores the attempts."""
+    fixtures = ['reset_password']
+
+    def setUp(self):
+        utils.SENT_SMS = {}
+        self.limit = moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
+        self.assertEqual(test_client.reset_password('+0', 'exists.com').status_code, 204)
+        self.code = utils.SENT_SMS['+0']
+
+    def confirm(self, code, password='123123123'):
+        return test_client.confirm_reset_password('+0', 'exists.com', code, password)
+
+    def test_wrong_codes_burn_the_code(self):
+        for _ in range(self.limit):
+            user, response = self.confirm(self.code + 1)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.data['errors']['code'][0]['error_code'],
+                             error_codes.INVALID_CONFIRMATION_CODE)
+        self.assertIsNone(user.password_reset_code)
+        user, response = self.confirm(self.code)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors'][''][0]['error_code'], error_codes.ATTEMPTS_LIMIT_REACHED)
+        self.assertFalse(user.check_password('123123123'))
+
+    def test_right_code_works_once(self):
+        user, response = self.confirm(self.code + 1)
+        self.assertEqual(user.password_reset_code_attempts, 1)
+        user, response = self.confirm(self.code)
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(user.check_password('123123123'))
+        self.assertIsNone(user.password_reset_code)
+        self.assertEqual(user.password_reset_code_attempts, 0)
+        user, response = self.confirm(self.code, 'other-pass-456')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['code'][0]['error_code'],
+                         error_codes.INVALID_CONFIRMATION_CODE)
+        self.assertTrue(user.check_password('123123123'))
+
+    def test_new_reset_code_restores_attempts(self):
+        for _ in range(self.limit):
+            self.confirm(self.code + 1)
+        CustomUser.objects.filter(id=1).update(password_reset_code_sms_unlocks_at=None)
+        self.assertEqual(test_client.reset_password('+0', 'exists.com').status_code, 204)
+        self.assertEqual(CustomUser.objects.get(id=1).password_reset_code_attempts, 0)
+        user, response = self.confirm(utils.SENT_SMS['+0'])
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(user.check_password('123123123'))
+
+    def test_new_email_reset_code_restores_attempts(self):
+        CustomUser.objects.filter(id=1).update(is_email_confirmed=True, password_reset_code_attempts=self.limit)
+        self.assertEqual(test_client.reset_password('foo@foo.com', 'exists.com').status_code, 204)
+        self.assertEqual(CustomUser.objects.get(id=1).password_reset_code_attempts, 0)
