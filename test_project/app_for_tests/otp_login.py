@@ -560,3 +560,71 @@ class MeEndpointTestCase(TestCase):
             self.assertEqual(self.api.get(self.reverse('moses:customuser-me')).status_code, 200)
             self.assertEqual(
                 self.api.patch(self.reverse('moses:customuser-me'), {'name': 'Bob'}, format='json').status_code, 200)
+
+
+@override_settings(MOSES={**settings.MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": (2, 600)})
+class CodeSendingIpLimitTestCase(TestCase):
+    """Every endpoint that sends a phone code shares otp_request's per-IP counter."""
+
+    def setUp(self):
+        from test_project.app_for_tests import drf_request_factory
+        from rest_framework.test import force_authenticate
+        from moses.views.user import UserViewSet
+        self.factory, self.force_authenticate, self.views = drf_request_factory, force_authenticate, UserViewSet
+        self.site = Site.objects.create(domain='a.com')
+        self.user = User(phone_number=P1, site=self.site, is_phone_number_confirmed=True)
+        self.user.set_password('pass12345')
+        self.user.save()
+        self.n = 0
+        cache.clear()
+
+    def call(self, action, ip, method='post'):
+        self.n += 1
+        phone = '+9965070001%02d' % self.n
+        data = {
+            'create': {'phone_number': phone, 'email': 'u%d@a.com' % self.n, 'password': 'pass12345',
+                       'first_name': 'A', 'last_name': 'B', 'domain': 'a.com'},
+            'reset_password': {'credential': P1, 'domain': 'a.com'},
+            'me': {'phone_number': phone},
+        }.get(action, {})
+        User.objects.filter(pk=self.user.pk).update(
+            password_reset_code_sms_unlocks_at=None, phone_number_confirmation_code_sms_unlocks_at=None)
+        request = getattr(self.factory, method)('/', data, format='json', REMOTE_ADDR=ip)
+        if action in ('request_phone_number_confirmation_pin', 'me'):
+            self.force_authenticate(request, User.objects.get(pk=self.user.pk))
+        return self.views.as_view({method: action})(request)
+
+    def assert_limited(self, action, method='post'):
+        cache.clear()
+        for _ in range(2):
+            self.assertLess(self.call(action, '1.1.1.1', method).status_code, 300, action)
+        response = self.call(action, '1.1.1.1', method)
+        self.assertEqual(response.status_code, 429, action)
+        self.assertEqual(code(response), error_codes.TOO_FREQUENT_SMS_REQUESTS)
+        self.assertNotEqual(self.call(action, '2.2.2.2', method).status_code, 429, action)
+
+    def test_each_code_sending_endpoint_is_limited(self):
+        self.assert_limited('create')
+        self.assert_limited('reset_password')
+        self.assert_limited('request_phone_number_confirmation_pin')
+        self.assert_limited('me', 'patch')
+
+    def test_shares_the_otp_request_counter(self):
+        with override_settings(MOSES={**settings.MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": (2, 600),
+                                      "LOGIN_METHODS": ["WITH_PASSWORD", "WITHOUT_PASSWORD"]}):
+            self.assertEqual(test_client.otp_request(P2, 'a.com', ip='1.1.1.1').status_code, 200)
+            self.assertEqual(self.call('reset_password', '1.1.1.1').status_code, 204)
+            self.assertEqual(self.call('reset_password', '1.1.1.1').status_code, 429)
+
+    def test_profile_update_without_a_new_phone_is_not_counted(self):
+        for _ in range(3):
+            request = self.factory.patch('/', {'first_name': 'Bob'}, format='json', REMOTE_ADDR='1.1.1.1')
+            self.force_authenticate(request, User.objects.get(pk=self.user.pk))
+            self.assertEqual(self.views.as_view({'patch': 'me'})(request).status_code, 200)
+
+    def test_no_limit_by_default(self):
+        # settings.MOSES here already carries the class override, so drop the key.
+        with override_settings(MOSES={k: v for k, v in settings.MOSES.items()
+                                      if k != "PHONE_OTP_REQUEST_IP_LIMIT"}):
+            for _ in range(4):
+                self.assertNotEqual(self.call('create', '1.1.1.1').status_code, 429)

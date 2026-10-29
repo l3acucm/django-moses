@@ -45,6 +45,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 "create", "set_password", "reset_password", "reset_password_confirm"):
             raise NotFound()
         super().initial(request, *args, **kwargs)
+        # Endpoints that send a code share otp_request's per-IP limit
+        # (a profile update only when it sends one, see perform_update).
+        if self.action in ("create", "reset_password", "request_phone_number_confirmation_pin"):
+            otp_login.check_request_ip_limit(request)
 
     def permission_denied(self, request, **kwargs):
         if (
@@ -138,6 +142,10 @@ class UserViewSet(viewsets.ModelViewSet):
             djoser_settings.EMAIL.confirmation(self.request, context).send(to)
 
     def perform_update(self, serializer, *args, **kwargs):
+        phone_number = serializer.validated_data.get('phone_number')
+        if phone_number is not None and phone_number not in (
+                serializer.instance.phone_number, serializer.instance.phone_number_candidate):
+            otp_login.check_request_ip_limit(self.request)  # a new number gets a code
         super().perform_update(serializer, *args, **kwargs)
         user = serializer.instance
         signals.user_updated.send(
