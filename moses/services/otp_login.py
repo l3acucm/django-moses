@@ -85,22 +85,31 @@ def uncount_used_code(user: CustomUser) -> None:
         pass
 
 
+def check_phone_codes_limit(user: CustomUser) -> None:
+    """Refuses once PHONE_OTP_CODES_PER_PHONE_LIMIT unused codes (login and reset) went to the phone."""
+    limit = moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT
+    if limit is not None and cache.get(phone_codes_key(user), 0) >= limit[0]:
+        raise CustomAPIException(
+            {'': [KwargsError(code=error_codes.PHONE_OTP_CODES_LIMIT_REACHED)]},
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+
+def count_phone_code(user: CustomUser) -> None:
+    limit = moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT
+    if limit is not None:
+        count_hit(phone_codes_key(user), limit[1])
+
+
 def send_login_code(user: CustomUser) -> None:
     """Sends a code, refusing once PHONE_OTP_CODES_PER_PHONE_LIMIT unused codes went out in the window.
 
     Only sent codes are counted, and a successful verify takes its code off the
     count; a request refused by the resend pause raises before the hit.
     """
-    limit = moses_settings.PHONE_OTP_CODES_PER_PHONE_LIMIT
-    key = phone_codes_key(user)
-    if limit is not None and cache.get(key, 0) >= limit[0]:
-        raise CustomAPIException(
-            {'': [KwargsError(code=error_codes.PHONE_OTP_CODES_LIMIT_REACHED)]},
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
+    check_phone_codes_limit(user)
     send_credential_confirmation_code(user, Credential.PHONE_NUMBER, generate_new=True)
-    if limit is not None:
-        count_hit(key, limit[1])
+    count_phone_code(user)
 
 
 def request_login_code(phone_number: str, domain: str) -> CustomUser:

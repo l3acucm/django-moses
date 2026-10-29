@@ -169,6 +169,64 @@ class ResetPasswordCodeAttemptsTestCase(TestCase):
         self.assertTrue(user.check_password('123123123'))
 
     def test_new_email_reset_code_restores_attempts(self):
-        CustomUser.objects.filter(id=1).update(is_email_confirmed=True, password_reset_code_attempts=self.limit)
+        CustomUser.objects.filter(id=1).update(
+            is_email_confirmed=True, password_reset_code_attempts=self.limit, password_reset_code_sms_unlocks_at=None)
         self.assertEqual(test_client.reset_password('foo@foo.com', 'exists.com').status_code, 204)
         self.assertEqual(CustomUser.objects.get(id=1).password_reset_code_attempts, 0)
+
+
+@override_settings(MOSES={**django_settings.MOSES, 'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400)})
+class ResetPasswordPerPhoneCapTestCase(TestCase):
+    """Phone reset codes share PHONE_OTP_CODES_PER_PHONE_LIMIT's count of unused codes with login codes."""
+    fixtures = ['reset_password']
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        utils.SENT_SMS = {}
+
+    def reset(self, credential='+0'):
+        CustomUser.objects.filter(id=1).update(password_reset_code_sms_unlocks_at=None)
+        return test_client.reset_password(credential, 'exists.com')
+
+    def assert_capped(self):
+        utils.SENT_SMS = {}
+        response = self.reset()
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.data['errors'][''][0]['error_code'], error_codes.PHONE_OTP_CODES_LIMIT_REACHED)
+        self.assertEqual(utils.SENT_SMS, {})
+
+    def test_fourth_reset_code_is_refused(self):
+        for _ in range(3):
+            self.assertEqual(self.reset().status_code, 204)
+        self.assert_capped()
+
+    def test_shared_with_login_codes(self):
+        from moses.services.otp_login import send_login_code
+        self.assertEqual(self.reset().status_code, 204)
+        for _ in range(2):
+            CustomUser.objects.filter(id=1).update(phone_number_confirmation_code_sms_unlocks_at=None)
+            send_login_code(CustomUser.objects.get(id=1))
+        self.assert_capped()
+
+    def test_used_reset_code_does_not_count(self):
+        for _ in range(3):
+            self.assertEqual(self.reset().status_code, 204)
+            _, response = test_client.confirm_reset_password('+0', 'exists.com', utils.SENT_SMS['+0'], '123123123')
+            self.assertEqual(response.status_code, 204)
+        self.assertEqual(self.reset().status_code, 204)
+
+    def test_email_reset_waits_like_phone_and_is_not_counted(self):
+        CustomUser.objects.filter(id=1).update(is_email_confirmed=True)
+        self.assertEqual(test_client.reset_password('foo@foo.com', 'exists.com').status_code, 204)
+        response = test_client.reset_password('foo@foo.com', 'exists.com')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors'][''][0]['error_code'], error_codes.TOO_FREQUENT_SMS_REQUESTS)
+        for _ in range(3):
+            self.assertEqual(self.reset().status_code, 204)
+
+    def test_no_cap_by_default(self):
+        with override_settings(MOSES={k: v for k, v in django_settings.MOSES.items()
+                                      if k != 'PHONE_OTP_CODES_PER_PHONE_LIMIT'}):
+            for _ in range(5):
+                self.assertEqual(self.reset().status_code, 204)
