@@ -1,6 +1,6 @@
 import pyotp
 from django.conf import settings as django_settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -25,6 +25,7 @@ from moses.enums import Credential
 from moses.models import CustomUser
 from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
 from moses.services import otp_login
+from moses.services.anonymize import anonymize_user, superuser_error
 from moses.services.messages import render_message
 from moses.services.reset_password import send_password_reset_code
 
@@ -42,10 +43,6 @@ class UserViewSet(viewsets.ModelViewSet):
         methods = login_methods()
         if WITH_PASSWORD not in methods and self.action in (
                 "create", "set_password", "reset_password", "reset_password_confirm"):
-            raise NotFound()
-        # ponytail: self-delete stays 404 with WITHOUT_PASSWORD as in 0.18.1; Task 3 replaces it with anonymization.
-        if WITHOUT_PASSWORD in methods and (
-                self.action == "destroy" or (self.action == "me" and request.method == "DELETE")):
             raise NotFound()
         super().initial(request, *args, **kwargs)
 
@@ -154,13 +151,29 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if instance.is_superuser:
+            raise superuser_error()
+        # Code-login users never had a password to confirm with.
+        if request.user.has_usable_password():
+            serializer = self.get_serializer(instance, data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        if instance == request.user:
-            utils.logout_user(self.request)
         self.perform_destroy(instance)
+        if instance == request.user:
+            self._logout(request)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        anonymize_user(instance)
+
+    @staticmethod
+    def _logout(request):
+        token_model = djoser_settings.TOKEN_MODEL
+        # JWT-only projects: authtoken isn't installed, so its Token is abstract (no manager).
+        if token_model is None or not token_model._meta.abstract:
+            utils.logout_user(request)
+        elif djoser_settings.CREATE_SESSION_ON_LOGIN:
+            logout(request)
 
     @action(["get", "put", "patch", "delete"], detail=False)
     def me(self, request, *args, **kwargs):

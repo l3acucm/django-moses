@@ -10,6 +10,7 @@ from .common.exceptions import CustomAPIException
 from .conf import WITH_PASSWORD, WITHOUT_PASSWORD, login_methods
 from .models import CustomUser
 from .services import otp_login
+from .services.anonymize import anonymize_user
 
 
 class OTPAdminAuthenticationForm(AdminAuthenticationForm):
@@ -147,6 +148,29 @@ class CustomUserAdmin(UserAdmin):
     ordering = ('-created_at',)
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('phone_number', 'first_name', 'last_name', 'email', 'id')
+
+    # «Delete» anonymizes (see moses.services.anonymize) instead of cascading
+    # away everything that points at the user.
+    def delete_model(self, request, obj):
+        anonymize_user(obj)
+
+    def delete_queryset(self, request, queryset):
+        with transaction.atomic():
+            for user in queryset:
+                anonymize_user(user)
+
+    def has_delete_permission(self, request, obj=None):
+        # Refuse up front, before Django logs the deletion and reports success.
+        if obj is not None and obj.is_superuser:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def get_deleted_objects(self, objs, request):
+        # Nothing cascades: only the users themselves. A superuser among them
+        # lands in perms_needed, which makes delete_selected refuse the whole action.
+        to_delete = [str(o) for o in objs]
+        perms_needed = {str(o) for o in objs if o.is_superuser}
+        return to_delete, {self.opts.verbose_name_plural: len(to_delete)}, perms_needed, []
 
 
 admin.site.register(CustomUser, CustomUserAdmin)

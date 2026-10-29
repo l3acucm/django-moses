@@ -22,3 +22,13 @@ phone_number_confirmed = Signal()
 #   - email: The confirmed email address (str)
 #   - is_initial_confirmation: True if this is the first confirmation, False if updating email
 email_confirmed = Signal()
+
+
+# Signal emitted after a user was anonymized (moses never deletes user rows;
+# every API/admin "delete" anonymizes instead). Sent inside the same
+# transaction as the anonymization, so a failing receiver rolls it back.
+# Hook it to wipe your own personal data (profiles, avatars, device tokens).
+# Provides:
+#   - sender: The User model class
+#   - user: The anonymized user instance
+user_anonymized = Signal()

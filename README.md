@@ -354,11 +354,57 @@ A superuser or a user with an MFA key must also send `"otp"` (their TOTP); a mis
 this way. There is no DEBUG master code. `phone_number_confirmed` receivers run inside the verify transaction, under a
 row lock on the user: keep them quick, and an exception in one fails the login.
 
-While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
-`reset_password_confirm`, self-deletion (`DELETE /moses/users/me/` and `DELETE /moses/users/{id}/`; it is gated by
-`current_password`) and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
+Without `WITH_PASSWORD`, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
+`reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Self-deletion works under every
+configuration (see Deletion).
 
 Both limits count in Django's cache, so it must be shared and atomic (Redis or Memcached); LocMem is per process.
 
 The per-IP limit uses `IP_HEADER`: it must be a header your reverse proxy overwrites (not one the client can set),
 otherwise the limit can be bypassed by spoofing it. If `IP_HEADER` is set but missing on a request, `REMOTE_ADDR` is used.
+
+## Deletion
+
+Moses never deletes a user row. `DELETE /moses/users/me/`, `DELETE /moses/users/{id}/`, the Django admin «Delete»
+button and the admin «Delete selected» action all call `moses.services.anonymize.anonymize_user(user)`, so games,
+payments and anything else pointing at the user stay intact.
+
+`anonymize_user` sets `first_name` and `last_name` to `DELETED`, replaces `phone_number` with a random
+`deleted-xxxxxxxxxxxx` placeholder (unique per site, not a valid phone; collisions are retried), clears `email`,
+`email_candidate`, `phone_number_candidate`, `google_sub`, `telegram_id` and `mfa_secret_key`, sets an unusable password,
+`is_active = False`, `is_phone_number_confirmed = False`, zeroes the confirmation pins and the password reset code, then
+sends `user_anonymized` — all in one transaction. The old phone number is free again: `otp_request` with it creates a
+new user. Anonymizing an already anonymized user works (a new placeholder, the signal fires again).
+
+Self-deletion needs `current_password` only if the user has a usable password (code-login users have none); a wrong
+one gives 400. Superusers can't be anonymized: the API answers 403 `{"": [superuser_cannot_be_deleted]}`, the admin
+refuses the delete page (403) and refuses the whole bulk action if any selected user is a superuser. The admin
+confirmation page lists only the users themselves (nothing cascades).
+
+**user_anonymized** (`sender`: the User model class, `user`: the anonymized user) runs inside the anonymization
+transaction; an exception in a receiver rolls it back. Hook it to wipe your own personal data:
+
+```python
+from django.dispatch import receiver
+from moses.models import CustomUser
+from moses.signals import user_anonymized
+
+@receiver(user_anonymized, sender=CustomUser)
+def wipe_profile(sender, user, **kwargs):
+    user.profile.avatar = None
+    user.profile.save()
+```
+
+## Changelog
+
+### 0.19.0
+
+- `LOGIN_METHODS` (`['WITH_PASSWORD']` by default, `'WITHOUT_PASSWORD'` for SMS-code login) replaces `PHONE_OTP_LOGIN`,
+  which is removed, not aliased: replace `'PHONE_OTP_LOGIN': True` with `'LOGIN_METHODS': ['WITHOUT_PASSWORD']` (or both
+  values). A leftover `PHONE_OTP_LOGIN` key is ignored.
+- Django admin login by SMS code (`OTPAdminAuthenticationForm`) when `WITHOUT_PASSWORD` is on.
+- Deletion anonymizes instead of deleting (see Deletion), in the API and in `CustomUserAdmin`. Self-deletion is
+  available again with `WITHOUT_PASSWORD` (0.18.1 answered 404) and needs no password for passwordless users.
+- Upgrading from 0.18: no new migrations. If you subclassed `CustomUserAdmin` to anonymize, drop that override; move
+  project-specific cleanup into a `user_anonymized` receiver. Code that relied on `pre_delete`/`post_delete` of the user
+  for account deletion must move to `user_anonymized`.
