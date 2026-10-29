@@ -744,3 +744,57 @@ class OtpVerifyIpLimitTestCase(TestCase):
         with override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None}):
             for _ in range(5):
                 self.assertEqual(test_client.otp_verify(P1, '111111', 'a.com', ip='1.1.1.1').status_code, 400)
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None})
+class NumberChangeOntoShadowTestCase(TestCase):
+    """A number held by a never-confirmed user (e.g. typed into otp_request and
+    never verified) can be taken by another user's confirmed number change."""
+
+    def setUp(self):
+        self.site = Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        cache.clear()
+        self.assertEqual(test_client.otp_request(P2, 'a.com').status_code, 200)
+        self.shadow = User.objects.get(phone_number=P2)
+        self.user = User(phone_number=P1, site=self.site, is_phone_number_confirmed=True)
+        self.user.set_unusable_password()
+        self.user.save()
+        self.anonymized = []
+        from moses.signals import user_anonymized
+        receiver = lambda sender, user, **kwargs: self.anonymized.append(user.pk)
+        user_anonymized.connect(receiver, weak=False)
+        self.addCleanup(user_anonymized.disconnect, receiver)
+
+    def change_number(self):
+        self.user, response = test_client.update_user(self.user, {'phone_number': P2})
+        self.assertEqual(response.status_code, 200)
+        return test_client.confirm_phone_number(self.user, utils.SENT_SMS[P1], utils.SENT_SMS[P2])
+
+    def test_unconfirmed_holder_is_anonymized(self):
+        self.user, response = self.change_number()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.user.phone_number, P2)
+        self.assertEqual(self.anonymized, [self.shadow.pk])
+        self.shadow.refresh_from_db()
+        self.assertFalse(self.shadow.is_active)
+        self.assertNotEqual(self.shadow.phone_number, P2)
+
+    def test_staff_holder_is_kept(self):
+        from django.db import IntegrityError, transaction
+        User.objects.filter(pk=self.shadow.pk).update(is_staff=True)
+        with self.assertRaises(IntegrityError), transaction.atomic():  # unchanged: a taken number fails
+            self.change_number()
+        self.assertEqual(self.anonymized, [])
+        self.assertEqual(User.objects.get(pk=self.shadow.pk).phone_number, P2)
+
+    def test_unconfirmed_user_patch_onto_held_number_is_not_500(self):
+        User.objects.filter(pk=self.user.pk).update(is_phone_number_confirmed=False)
+        self.user.refresh_from_db()
+        self.user, response = test_client.update_user(self.user, {'phone_number': P2})
+        # Not proven yet, so the holder is left alone.
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['errors']['phone_number'][0]['error_code'],
+                         error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
+        self.assertEqual(self.user.phone_number, P1)
+        self.assertEqual(self.anonymized, [])

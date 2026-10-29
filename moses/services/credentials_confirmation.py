@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from django.conf import settings as django_settings
 from django.core.mail import send_mail
+from django.db import transaction
 from django.utils import timezone
 from django.utils.timezone import now
 
@@ -10,9 +11,26 @@ from moses.common import error_codes
 from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
 from moses.enums import Credential, SMSType
+from moses.models import CustomUser
+from moses.services.anonymize import anonymize_user
 from moses.services.messages import render_message
 from moses.services.sms import sms_unlock_time
 from moses.signals import phone_number_confirmed, email_confirmed
+
+
+def free_number_from_unconfirmed_holder(user, phone_number: str) -> None:
+    """Anonymizes another user on the site holding phone_number if they never confirmed it.
+
+    The confirmed candidate pin proves the number is this user's; a holder who
+    never proved it (e.g. typed into otp_request and never verified) gives it
+    up. Confirmed holders, staff and superusers are left alone.
+    """
+    holder = CustomUser.objects.filter(
+        site_id=user.site_id, phone_number=phone_number,
+        is_phone_number_confirmed=False, is_staff=False, is_superuser=False,
+    ).exclude(pk=user.pk).first()
+    if holder is not None:
+        anonymize_user(holder)
 
 
 def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, candidate_pin_str: str):
@@ -63,10 +81,13 @@ def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, c
         # Check if this is an update (had candidate) or initial confirmation
         had_candidate = bool(getattr(user, candidate_credential_field))
 
-        if candidate := getattr(user, candidate_credential_field):
-            setattr(user, current_credential_field, candidate)
-            setattr(user, candidate_credential_field, '')
-        user.save()
+        with transaction.atomic():
+            if candidate := getattr(user, candidate_credential_field):
+                if credential == Credential.PHONE_NUMBER:
+                    free_number_from_unconfirmed_holder(user, candidate)
+                setattr(user, current_credential_field, candidate)
+                setattr(user, candidate_credential_field, '')
+            user.save()
 
         # Emit signal after successful confirmation
         confirmed_value = getattr(user, current_credential_field)

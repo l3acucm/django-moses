@@ -177,6 +177,11 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
                     ignore_frequency_limit=True
                 )
             else:
+                # An unconfirmed user's number changes at once, so a taken one would hit the unique constraint.
+                if credential == Credential.PHONE_NUMBER and CustomUser.objects.filter(
+                        site_id=user.site_id, phone_number=value).exclude(pk=user.pk).exists():
+                    raise CustomAPIException({'phone_number': [KwargsError(
+                        kwargs={'phone_number': value}, code=error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)]})
                 send_credential_confirmation_code(
                     user,
                     credential,
