@@ -836,3 +836,36 @@ class OtpVerifyRevokeTokenTestCase(TestCase):
             self.authenticate(squatter_access)
         self.assertEqual(self.authenticate(response.data['access']).pk, squatter.pk)
         self.assertEqual(self.authenticate(str(RefreshToken(response.data['refresh']).access_token)).pk, squatter.pk)
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_CODE_TTL_SECONDS": 900, "PHONE_OTP_REQUEST_IP_LIMIT": None})
+class ResendExpiredPinTestCase(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        utils.SENT_SMS = {}
+        cache.clear()
+        self.user = User(phone_number=P1, site=Site.objects.create(domain='a.com'),
+                         phone_number_confirmation_pin=123457)
+        self.user.set_unusable_password()
+        self.user.save()
+
+        def age(seconds):
+            User.objects.filter(pk=self.user.pk).update(
+                phone_number_confirmation_pin_created_at=timezone.now() - timedelta(seconds=seconds))
+            self.user.refresh_from_db()  # request.user is this object
+        self.age = age
+
+    def test_expired_pin_is_replaced(self):
+        self.age(1200)
+        user, response = test_client.request_phone_number_confirmation_pin(self.user)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(user.phone_number_confirmation_pin, 123457)
+        self.assertEqual(utils.SENT_SMS[P1], user.phone_number_confirmation_pin)
+        self.assertEqual(test_client.otp_verify(P1, str(utils.SENT_SMS[P1]), 'a.com').status_code, 200)
+
+    def test_fresh_pin_is_resent_as_is(self):
+        self.age(60)
+        user, response = test_client.request_phone_number_confirmation_pin(self.user)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(utils.SENT_SMS[P1], 123457)

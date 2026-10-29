@@ -466,10 +466,12 @@ class UserViewSet(viewsets.ModelViewSet):
     def request_phone_number_confirmation_pin(self, request):
         # Resend the same code (an earlier, delayed message stays valid) —
         # unless it was wiped to 0, e.g. by saving the profile with an
-        # unchanged number; sending "0" would leave the user stuck.
+        # unchanged number (sending "0" would leave the user stuck), or is
+        # past PHONE_OTP_CODE_TTL_SECONDS (otp_verify would refuse it).
         user = request.user
         send_credential_confirmation_code(
-            user, Credential.PHONE_NUMBER, generate_new=not user.phone_number_confirmation_pin)
+            user, Credential.PHONE_NUMBER,
+            generate_new=not user.phone_number_confirmation_pin or otp_login.login_code_expired(user))
         if user.phone_number_candidate:
             send_credential_confirmation_code(
                 user, Credential.PHONE_NUMBER, candidate=True,
