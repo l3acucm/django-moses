@@ -1,4 +1,4 @@
-import random
+import secrets
 from datetime import timedelta
 
 from django.conf import settings as django_settings
@@ -141,7 +141,7 @@ def send_credential_confirmation_code(
             raise ValueError(error_codes.INVALID_CREDENTIAL_TYPE)
 
     if generate_new:
-        setattr(user, pin_field, random.randint(100000, 999999))
+        setattr(user, pin_field, 100000 + secrets.randbelow(900000))
     # Every sent code gets a fresh set of attempts; otherwise a user who
     # mistyped it a few times is locked out for good.
     setattr(user, attempts_field, 0)

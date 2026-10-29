@@ -1,10 +1,14 @@
+import logging
+
 from django import forms
 from django.contrib import admin
 from django.contrib.admin.forms import AdminAuthenticationForm
 from django.contrib.auth import authenticate
+from django.contrib.auth.signals import user_login_failed
 from django.contrib.auth.admin import UserAdmin
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils.translation import gettext_lazy as _
 
 from .common.exceptions import CustomAPIException
 from .conf import WITH_PASSWORD, WITHOUT_PASSWORD, login_methods
@@ -13,11 +17,14 @@ from .services import otp_login
 from .services.anonymize import anonymize_user
 
 
+logger = logging.getLogger(__name__)
+
+
 class OTPAdminAuthenticationForm(AdminAuthenticationForm):
     """Admin login by password and/or by SMS code, per MOSES["LOGIN_METHODS"]."""
     otp = forms.CharField(required=False)
     domain = forms.CharField(required=False)
-    code_sent_message = 'Если номер принадлежит сотруднику, код отправлен'
+    code_sent_message = _('Если номер принадлежит сотруднику, код отправлен')
 
     def __init__(self, request=None, *args, **kwargs):
         super().__init__(request, *args, **kwargs)
@@ -28,7 +35,7 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
         elif WITHOUT_PASSWORD in methods:
             self.fields['password'].required = False
         if WITHOUT_PASSWORD in methods:
-            self.fields['code'] = forms.CharField(required=False)
+            self.fields['code'] = forms.CharField(required=False, label=_('Код из SMS'))
 
     def clean(self):
         username = self.cleaned_data.get('username')
@@ -48,6 +55,8 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
         if username and code:
             self.user_cache = self._user_by_code(username, domain, code, otp)
             if self.user_cache is None:
+                user_login_failed.send(
+                    sender=__name__, credentials={'username': username, 'domain': domain}, request=self.request)
                 raise self.get_invalid_login_error()
             self.confirm_login_allowed(self.user_cache)
         elif username is not None and password:
@@ -83,6 +92,8 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
                     otp_login.send_login_code(user)
         except CustomAPIException:
             pass
+        except Exception:  # SMS gateway down etc.: same neutral answer
+            logger.exception('Admin login code could not be sent')
 
     def _user_by_code(self, username, domain, code, otp):
         user = self._staff(username, domain).first()
@@ -96,6 +107,7 @@ class OTPAdminAuthenticationForm(AdminAuthenticationForm):
             return None
         user.backend = 'moses.authentication.MFAModelBackend'
         return user
+
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser

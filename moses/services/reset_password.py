@@ -1,4 +1,4 @@
-import random
+import secrets
 from datetime import timedelta
 
 from django.core.mail import send_mail
@@ -17,7 +17,7 @@ def send_password_reset_code(user, credential: Credential) -> bool:
     match credential:
         case user.email:
             if user.is_email_confirmed or bypass_confirmation:
-                user.password_reset_code = random.randint(0, 1000000)
+                user.password_reset_code = secrets.randbelow(1000001)
                 user.save()
                 title = render_message('PASSWORD_RESET_PIN_TITLE', user, pin=user.password_reset_code)
                 body = render_message('PASSWORD_RESET_EMAIL_BODY', user, pin=user.password_reset_code)
@@ -27,7 +27,7 @@ def send_password_reset_code(user, credential: Credential) -> bool:
         case user.phone_number:
             if user.is_phone_number_confirmed or bypass_confirmation:
                 if (sut:=sms_unlock_time(user, SMSType.PASSWORD_RESET)) is None or sut <= timezone.now():
-                    user.password_reset_code = random.randint(100000, 999999)
+                    user.password_reset_code = 100000 + secrets.randbelow(900000)
                     user.password_reset_code_sms_unlocks_at = timezone.now() + timedelta(
                         seconds=moses_settings.PASSWORD_RESET_TIMEOUT_SECONDS)
                     user.save()

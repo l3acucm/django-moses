@@ -88,10 +88,15 @@ class Settings:
         self._load_default_settings()
         self._override_settings(overriden_settings)
         self._init_settings_to_import()
-        self._validate_login_methods()
+        self._validate_login_methods(overriden_settings)
 
-    def _validate_login_methods(self):
+    def _validate_login_methods(self, overriden_settings):
+        if 'PHONE_OTP_LOGIN' in overriden_settings:
+            raise ImproperlyConfigured("PHONE_OTP_LOGIN was removed in 0.19; use LOGIN_METHODS")
         methods = self.LOGIN_METHODS
+        if not isinstance(methods, (list, tuple, set, frozenset)):
+            raise ImproperlyConfigured(
+                "MOSES['LOGIN_METHODS'] must be a list of %r / %r, got %r" % (WITH_PASSWORD, WITHOUT_PASSWORD, methods))
         if not methods or not set(methods) <= {WITH_PASSWORD, WITHOUT_PASSWORD}:
             raise ImproperlyConfigured(
                 "MOSES['LOGIN_METHODS'] must be a non-empty list of %r / %r, got %r"

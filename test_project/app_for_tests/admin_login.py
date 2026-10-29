@@ -1,4 +1,7 @@
+from unittest import mock
+
 import pyotp
+from django.contrib.auth.signals import user_login_failed
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.cache import cache
@@ -97,6 +100,24 @@ class BothMethodsTestCase(AdminLoginBase):
         response = self.send_code(P_STAFF)
         self.assertContains(response, SENT)
         self.assertEqual(utils.SENT_SMS, {})
+
+    def test_sms_handler_failure_is_neutral(self):
+        with mock.patch('moses.conf.settings.SEND_SMS_HANDLER', side_effect=RuntimeError('gateway down')):
+            response = self.send_code(P_STAFF)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, SENT)
+        self.assertNotContains(response, 'errornote')
+
+    def test_failed_code_login_sends_user_login_failed(self):
+        self.send_code(P_STAFF)
+        got = []
+        handler = lambda sender, credentials, **kw: got.append(credentials)
+        user_login_failed.connect(handler)
+        self.addCleanup(user_login_failed.disconnect, handler)
+        self.post(username=P_STAFF, code=str((self.pin(self.staff) % 999999) + 1))
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]['username'], P_STAFF)
+        self.assertNotIn('code', got[0])
 
     def test_staff_logs_in_by_code(self):
         self.send_code(P_STAFF)

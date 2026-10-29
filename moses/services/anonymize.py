@@ -34,9 +34,13 @@ def anonymize_user(user) -> None:
     user.google_sub = user.telegram_id = ''
     user.mfa_secret_key = ''
     user.is_active = False
+    user.is_staff = False
+    user.is_email_confirmed = False
     user.is_phone_number_confirmed = False
     user.email_confirmation_pin = user.email_candidate_confirmation_pin = 0
     user.phone_number_confirmation_pin = user.phone_number_candidate_confirmation_pin = 0
     user.password_reset_code = None
     user.save()
+    user.groups.clear()
+    user.user_permissions.clear()
     user_anonymized.send(sender=CustomUser, user=user)

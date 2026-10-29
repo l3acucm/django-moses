@@ -6,8 +6,14 @@ from django.contrib.sites.models import Site
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from rest_framework.test import APIClient as DrfClient
+from rest_framework.test import APIClient as DrfClient, APIRequestFactory
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
+from django.contrib.auth.models import Group, Permission
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from moses.authentication import JWTAuthentication
+from moses.common.exceptions import CustomAPIException
 from moses.models import CustomUser
 from moses.services.anonymize import anonymize_user
 from moses.signals import user_anonymized
@@ -24,6 +30,7 @@ def moses(*methods):
 
 
 def make(site, phone, password=PASSWORD, **kw):
+    kw.setdefault('is_email_confirmed', True)
     user = CustomUser(
         site=site, phone_number=phone, first_name='Ann', last_name='Lee', email=f'{phone[1:]}@a.com',
         email_candidate='new@a.com', phone_number_candidate='+996700000999', is_phone_number_confirmed=True,
@@ -49,6 +56,10 @@ class AnonymizedAssertions:
         self.assertEqual((user.google_sub, user.telegram_id, user.mfa_secret_key), ('', '', ''))
         self.assertFalse(user.is_active)
         self.assertFalse(user.is_phone_number_confirmed)
+        self.assertFalse(user.is_email_confirmed)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.groups.exists())
+        self.assertFalse(user.user_permissions.exists())
         self.assertEqual(
             (user.email_confirmation_pin, user.email_candidate_confirmation_pin,
              user.phone_number_confirmation_pin, user.phone_number_candidate_confirmation_pin),
@@ -125,6 +136,33 @@ class AnonymizeServiceTestCase(AnonymizedAssertions, TestCase):
     def setUp(self):
         self.site = Site.objects.create(domain='a.com')
 
+    def test_staff_groups_permissions_stripped(self):
+        user = make(self.site, P1, is_staff=True)
+        user.groups.add(Group.objects.create(name='g'))
+        user.user_permissions.add(Permission.objects.first())
+        anonymize_user(user)
+        self.assert_anonymized(user, P1)
+
+    def test_old_access_token_rejected(self):
+        user = make(self.site, P1)
+        token = str(RefreshToken.for_user(user).access_token)
+        request = APIRequestFactory().get('/', HTTP_AUTHORIZATION='Bearer ' + token)
+        self.assertEqual(JWTAuthentication().authenticate(request)[0].pk, user.pk)
+        anonymize_user(user)
+        with self.assertRaises(AuthenticationFailed):
+            JWTAuthentication().authenticate(request)
+
+    def test_raising_receiver_rolls_back(self):
+        user = make(self.site, P1)
+        before = CustomUser.objects.get(pk=user.pk)
+        def boom(sender, user, **kwargs):
+            raise RuntimeError('boom')
+        user_anonymized.connect(boom)
+        self.addCleanup(user_anonymized.disconnect, boom)
+        with self.assertRaises(RuntimeError):
+            anonymize_user(user)
+        self.assert_untouched(before)
+
     def test_twice_no_error(self):
         user = make(self.site, P1)
         anonymize_user(user)
@@ -142,8 +180,10 @@ class AnonymizeServiceTestCase(AnonymizedAssertions, TestCase):
 
     def test_superuser_refused(self):
         user = make(self.site, P1, is_staff=True, is_superuser=True)
-        with self.assertRaises(Exception):
+        with self.assertRaises(CustomAPIException) as ctx:
             anonymize_user(user)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertEqual(ctx.exception.errors_repr[''][0]['error_code'], 'superuser_cannot_be_deleted')
         self.assert_untouched(user)
 
     @override_settings(MOSES={**moses(NOPW), "PHONE_OTP_REQUEST_IP_LIMIT": None})

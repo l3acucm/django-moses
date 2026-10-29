@@ -72,3 +72,11 @@ class LoginMethodsTestCase(TestCase):
             for bad in ([], ["FOO"], [PW, "FOO"]):
                 with self.assertRaises(ImproperlyConfigured):
                     Settings(default_settings, {"LOGIN_METHODS": bad})
+
+    def test_removed_key_and_non_iterable_rejected(self):
+        with override_settings(MOSES={}):
+            with self.assertRaisesMessage(ImproperlyConfigured, "PHONE_OTP_LOGIN was removed"):
+                Settings(default_settings, {"PHONE_OTP_LOGIN": False})
+            for bad in (None, 5, "WITH_PASSWORD"):
+                with self.assertRaises(ImproperlyConfigured):
+                    Settings(default_settings, {"LOGIN_METHODS": bad})

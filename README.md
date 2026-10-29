@@ -325,7 +325,9 @@ def handle_email_confirmed(sender, user, email, is_initial_confirmation, **kwarg
 
 ## Phone OTP login
 
-Opt-in passwordless login by SMS code, enabled via `LOGIN_METHODS` (default `['WITH_PASSWORD']`; `PHONE_OTP_LOGIN` was removed). Values: `WITH_PASSWORD` (token/obtain, user create, set/reset password) and `WITHOUT_PASSWORD` (otp_request, otp_verify); a disabled method's endpoints answer 404. Use `['WITH_PASSWORD', 'WITHOUT_PASSWORD']` for both; empty or unknown values raise `ImproperlyConfigured`.
+Opt-in passwordless login by SMS code, enabled via `LOGIN_METHODS` (default `['WITH_PASSWORD']`; `PHONE_OTP_LOGIN` was removed and raises `ImproperlyConfigured` if still present). Values: `WITH_PASSWORD` (token/obtain, user create, set/reset password) and `WITHOUT_PASSWORD` (otp_request, otp_verify); a disabled method's endpoints answer 404. Use `['WITH_PASSWORD', 'WITHOUT_PASSWORD']` for both; empty, unknown or non-list values raise `ImproperlyConfigured`.
+
+> **Warning:** set `PHONE_OTP_CODES_PER_PHONE_LIMIT` (and `PHONE_OTP_REQUEST_IP_LIMIT`) before enabling `WITHOUT_PASSWORD`. Both default to `None`; without a per-number cap every new code resets the attempts counter, which allows roughly 8.6k guesses per day per number.
 Run `migrate` after upgrading to 0.18.0 (migration `0007_email_unique_unless_blank`: `(site, email)` is unique only when the email is non-blank).
 
 ```python
@@ -365,14 +367,14 @@ otherwise the limit can be bypassed by spoofing it. If `IP_HEADER` is set but mi
 
 ## Deletion
 
-Moses never deletes a user row. `DELETE /moses/users/me/`, `DELETE /moses/users/{id}/`, the Django admin «Delete»
+Through the API and `CustomUserAdmin` moses never deletes a user row (`user.delete()`, ORM/shell code and deleting a `Site` still hard-delete). `DELETE /moses/users/me/`, `DELETE /moses/users/{id}/`, the Django admin «Delete»
 button and the admin «Delete selected» action all call `moses.services.anonymize.anonymize_user(user)`, so games,
 payments and anything else pointing at the user stay intact.
 
 `anonymize_user` sets `first_name` and `last_name` to `DELETED`, replaces `phone_number` with a random
 `deleted-xxxxxxxxxxxx` placeholder (unique per site, not a valid phone; collisions are retried), clears `email`,
 `email_candidate`, `phone_number_candidate`, `google_sub`, `telegram_id` and `mfa_secret_key`, sets an unusable password,
-`is_active = False`, `is_phone_number_confirmed = False`, zeroes the confirmation pins and the password reset code, then
+`is_active = False`, `is_staff = False`, `is_phone_number_confirmed = False`, `is_email_confirmed = False`, clears groups and user permissions, zeroes the confirmation pins and the password reset code, then
 sends `user_anonymized` — all in one transaction. The old phone number is free again: `otp_request` with it creates a
 new user. Anonymizing an already anonymized user works (a new placeholder, the signal fires again).
 
@@ -382,7 +384,8 @@ refuses the delete page (403) and refuses the whole bulk action if any selected 
 confirmation page lists only the users themselves (nothing cascades).
 
 **user_anonymized** (`sender`: the User model class, `user`: the anonymized user) runs inside the anonymization
-transaction; an exception in a receiver rolls it back. Hook it to wipe your own personal data:
+transaction; an exception in a receiver rolls it back, so put external side effects (S3 deletes, pushes) in
+`transaction.on_commit`. Hook it to wipe your own personal data:
 
 ```python
 from django.dispatch import receiver
@@ -399,11 +402,18 @@ def wipe_profile(sender, user, **kwargs):
 
 ### 0.19.0
 
+**Admin login by code.** With `WITHOUT_PASSWORD` the admin login page gets a «Отправить код» button and a code field.
+Staff only: it never registers anyone, and answers the same whoever the number belongs to. Superusers still need their
+TOTP. Sending a code shares the per-IP limit (`PHONE_OTP_REQUEST_IP_LIMIT`) with `otp_request`.
+
 - `LOGIN_METHODS` (`['WITH_PASSWORD']` by default, `'WITHOUT_PASSWORD'` for SMS-code login) replaces `PHONE_OTP_LOGIN`,
   which is removed, not aliased: replace `'PHONE_OTP_LOGIN': True` with `'LOGIN_METHODS': ['WITHOUT_PASSWORD']` (or both
-  values). A leftover `PHONE_OTP_LOGIN` key is ignored.
+  values). A leftover `PHONE_OTP_LOGIN` key raises `ImproperlyConfigured`.
 - Django admin login by SMS code (`OTPAdminAuthenticationForm`) when `WITHOUT_PASSWORD` is on.
-- Deletion anonymizes instead of deleting (see Deletion), in the API and in `CustomUserAdmin`. Self-deletion is
+- **BREAKING:** deletion anonymizes instead of deleting (see Deletion), in the API and in `CustomUserAdmin`. Rows that
+  used to be CASCADE-deleted with the user are now kept: projects must wipe their personal data in a `user_anonymized`
+  receiver (runs inside the transaction; external side effects belong in `transaction.on_commit`). Only the API and
+  `CustomUserAdmin` anonymize; `user.delete()`, ORM/shell code and deleting a `Site` still hard-delete. Self-deletion is
   available again with `WITHOUT_PASSWORD` (0.18.1 answered 404) and needs no password for passwordless users.
 - Upgrading from 0.18: no new migrations. If you subclassed `CustomUserAdmin` to anonymize, drop that override; move
   project-specific cleanup into a `user_anonymized` receiver. Code that relied on `pre_delete`/`post_delete` of the user
