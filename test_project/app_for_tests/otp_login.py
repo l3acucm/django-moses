@@ -878,3 +878,28 @@ class ResendExpiredPinTestCase(TestCase):
         user, response = test_client.request_phone_number_confirmation_pin(self.user)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(utils.SENT_SMS[P1], 123457)
+
+
+@override_settings(MOSES={**settings.MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": (2, 600)})
+class SocialSignUpIpLimitTestCase(TestCase):
+    """Google/Telegram sign-up completion creates a user (and sends a code), so it shares the IP limit."""
+
+    def test_complete_registration_is_limited(self):
+        from test_project.app_for_tests import drf_request_factory
+        from moses.views.google_auth import GoogleCompleteRegistrationView
+        from moses.views.telegram_auth import TelegramCompleteRegistrationView
+        Site.objects.create(domain='a.com')
+        for view, token_field in ((GoogleCompleteRegistrationView, 'google_auth_token'),
+                                  (TelegramCompleteRegistrationView, 'telegram_auth_token')):
+            cache.clear()
+
+            def call(ip):
+                request = drf_request_factory.post(
+                    '/', {token_field: 'garbage', 'phone_number': P1, 'domain': 'a.com'},
+                    format='json', REMOTE_ADDR=ip)
+                return view.as_view()(request)
+            self.assertEqual([call('1.1.1.1').status_code for _ in range(2)], [400, 400])
+            response = call('1.1.1.1')
+            self.assertEqual(response.status_code, 429, view)
+            self.assertEqual(code(response), error_codes.TOO_FREQUENT_SMS_REQUESTS)
+            self.assertEqual(call('2.2.2.2').status_code, 400)

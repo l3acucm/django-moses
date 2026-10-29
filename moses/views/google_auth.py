@@ -10,6 +10,7 @@ from moses.common import error_codes
 from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
 from moses.models import CustomUser
+from moses.services import otp_login
 from moses.serializers import GoogleSignInSerializer, GoogleCompleteRegistrationSerializer
 from moses.services.google_auth import (
     verify_google_id_token,
@@ -101,6 +102,7 @@ class GoogleCompleteRegistrationView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        otp_login.check_request_ip_limit(request)  # creates a user and may send a code
         serializer = GoogleCompleteRegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
