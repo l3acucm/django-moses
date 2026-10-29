@@ -33,8 +33,18 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     "rest_framework",
-    "moses"
+    "moses",
+    # After moses, so moses/templates/admin/login.html wins.
+    "django.contrib.admin",
 ]
+
+MIDDLEWARE = [
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+STATIC_URL = "/static/"
 
 TEMPLATES = [
     {

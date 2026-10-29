@@ -26,7 +26,9 @@
         </p>
     {% endif %}
 
-    {% if form.non_field_errors %}
+    {% if form.code_sent %}
+        <ul class="messagelist"><li class="info">{{ form.code_sent_message }}</li></ul>
+    {% elif form.non_field_errors %}
         {% for error in form.non_field_errors %}
             <p class="errornote">
                 {{ error }}
@@ -50,11 +52,19 @@
                 {{ form.username.errors }}
                 {{ form.username.label_tag }} {{ form.username }}
             </div>
-            <div class="form-row">
-                {{ form.password.errors }}
-                {{ form.password.label_tag }} {{ form.password }}
-                <input type="hidden" name="next" value="{{ next }}">
-            </div>
+            {% if form.password %}
+                <div class="form-row">
+                    {{ form.password.errors }}
+                    {{ form.password.label_tag }} {{ form.password }}
+                </div>
+            {% endif %}
+            {% if form.code %}
+                <div class="form-row">
+                    {{ form.code.errors }}
+                    {{ form.code.label_tag }} {{ form.code }}
+                </div>
+            {% endif %}
+            <input type="hidden" name="next" value="{{ next }}">
             <div class="form-row">
                 {{ form.otp.errors }}
                 {{ form.otp.label_tag }} {{ form.otp }}
@@ -68,11 +78,14 @@
             {% endif %}
             <div class="submit-row">
                 <input type="submit" value="{% translate 'Log in' %}">
+                {% if form.code %}
+                    <input type="submit" name="send_code" value="Отправить код">
+                {% endif %}
             </div>
         </form>
     </div>
     <style>
-        #id_otp {
+        #id_otp, #id_code {
             clear: both;
             padding: 8px;
             width: 100%;
