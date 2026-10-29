@@ -421,6 +421,9 @@ class UserViewSet(viewsets.ModelViewSet):
         except CustomAPIException:
             otp_login.count_failed_verify(request)
             raise
+        # The verify may have changed the password hash (first proof); simplejwt's
+        # CHECK_REVOKE_TOKEN embeds it, so mint from the saved row, not the stale copy.
+        user.refresh_from_db()
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh), **result})
 

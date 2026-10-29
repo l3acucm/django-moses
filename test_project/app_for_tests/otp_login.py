@@ -798,3 +798,41 @@ class NumberChangeOntoShadowTestCase(TestCase):
                          error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
         self.assertEqual(self.user.phone_number, P1)
         self.assertEqual(self.anonymized, [])
+
+
+@override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None})
+class OtpVerifyRevokeTokenTestCase(TestCase):
+    """With simplejwt CHECK_REVOKE_TOKEN, the first code login of an unconfirmed number
+    ends the squatter's sessions (password hash changed) but not the owner's new ones."""
+
+    def setUp(self):
+        from rest_framework_simplejwt import authentication, tokens
+        Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        cache.clear()
+        # simplejwt modules hold api_settings by name, so override_settings can't reach them.
+        for api_settings in {id(m.api_settings): m.api_settings for m in (authentication, tokens)}.values():
+            patcher = mock.patch.object(api_settings, 'CHECK_REVOKE_TOKEN', True, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def authenticate(self, access):
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        auth = JWTAuthentication()
+        return auth.get_user(auth.get_validated_token(access))
+
+    def test_squatter_token_dies_owner_tokens_work(self):
+        from rest_framework_simplejwt.exceptions import AuthenticationFailed
+        from rest_framework_simplejwt.tokens import RefreshToken
+        squatter = User(phone_number=P1, site=Site.objects.get(domain='a.com'))
+        squatter.set_password('squatter123')
+        squatter.save()
+        squatter_access = str(RefreshToken.for_user(squatter).access_token)
+        self.assertEqual(self.authenticate(squatter_access).pk, squatter.pk)
+        self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 200)
+        response = test_client.otp_verify(P1, str(utils.SENT_SMS[P1]), 'a.com')
+        self.assertEqual(response.status_code, 200)
+        with self.assertRaises(AuthenticationFailed):
+            self.authenticate(squatter_access)
+        self.assertEqual(self.authenticate(response.data['access']).pk, squatter.pk)
+        self.assertEqual(self.authenticate(str(RefreshToken(response.data['refresh']).access_token)).pk, squatter.pk)
