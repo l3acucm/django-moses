@@ -328,7 +328,8 @@ def handle_email_confirmed(sender, user, email, is_initial_confirmation, **kwarg
 Opt-in passwordless login by SMS code, enabled via `LOGIN_METHODS` (default `['WITH_PASSWORD']`; `PHONE_OTP_LOGIN` was removed and raises `ImproperlyConfigured` if still present). Values: `WITH_PASSWORD` (token/obtain, user create, set/reset password) and `WITHOUT_PASSWORD` (otp_request, otp_verify); a disabled method's endpoints answer 404. Use `['WITH_PASSWORD', 'WITHOUT_PASSWORD']` for both; empty, unknown or non-list values raise `ImproperlyConfigured`.
 
 > **Warning:** set `PHONE_OTP_CODES_PER_PHONE_LIMIT` (and `PHONE_OTP_REQUEST_IP_LIMIT`) before enabling `WITHOUT_PASSWORD`. Both default to `None`; without a per-number cap every new code resets the attempts counter, which allows roughly 8.6k guesses per day per number.
-Run `migrate` after upgrading to 0.18.0 (migration `0007_email_unique_unless_blank`: `(site, email)` is unique only when the email is non-blank).
+
+Run `migrate` after upgrading to 0.18.0 or later (migration `0007_email_unique_unless_blank`: `(site, email)` is unique only when the email is non-blank).
 
 ```python
 MOSES = {
