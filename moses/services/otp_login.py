@@ -113,6 +113,9 @@ def verify_login_code(user: CustomUser, code: str, otp=None):
     increments or reuse a code, and writes only the fields it changes.
     A superuser or a user with an MFA key also needs a valid TOTP `otp`; a
     missing or wrong one costs an attempt but leaves the SMS code usable.
+    Exception: for an unconfirmed non-staff user the code is the first proof of
+    owning the number, so no TOTP is asked and the password, google_sub,
+    telegram_id and MFA key (attached by whoever registered it) are dropped.
     Returns None for a wrong code, else {'created': bool}: True when this verify
     did the initial phone confirmation.
     """
@@ -126,14 +129,19 @@ def verify_login_code(user: CustomUser, code: str, otp=None):
             received = 0
         pin = user.phone_number_confirmation_pin
         code_ok = received == pin and pin != 0
-        if code_ok and totp_ok(user, otp):
-            was_confirmed = user.is_phone_number_confirmed
+        was_confirmed = user.is_phone_number_confirmed
+        first_proof = not (was_confirmed or user.is_superuser or user.is_staff)
+        if code_ok and (first_proof or totp_ok(user, otp)):
+            fields = ['phone_number_confirmation_pin', 'phone_number_confirmation_attempts',
+                      'is_phone_number_confirmed']
+            if first_proof:
+                user.set_unusable_password()
+                user.google_sub = user.telegram_id = user.mfa_secret_key = ''
+                fields += ['password', 'google_sub', 'telegram_id', 'mfa_secret_key']
             user.phone_number_confirmation_pin = 0
             user.phone_number_confirmation_attempts = 0
             user.is_phone_number_confirmed = True
-            user.save(update_fields=[
-                'phone_number_confirmation_pin', 'phone_number_confirmation_attempts',
-                'is_phone_number_confirmed'])
+            user.save(update_fields=fields)
             if not was_confirmed:
                 phone_number_confirmed.send(
                     sender=user.__class__, user=user, phone_number=user.phone_number,

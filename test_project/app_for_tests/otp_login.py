@@ -389,14 +389,57 @@ class OtpVerifyTestCase(TestCase):
         import pyotp
         key = pyotp.random_base32()
         pin = self.request_code()
-        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key, is_phone_number_confirmed=True)
         self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
                          error_codes.INVALID_OTP)
         # pin not consumed: the same SMS code works with a valid TOTP
         response = test_client.otp_verify(P1, str(pin), 'a.com', otp=pyotp.TOTP(key).now())
         self.assertEqual(response.status_code, 200)
         self.assertEqual(set(response.data), {'access', 'refresh', 'created'})
+        self.assertIs(response.data['created'], False)
+        self.assertEqual(User.objects.get(phone_number=P1).mfa_secret_key, key)
+
+    def squat(self, **fields):
+        """An unconfirmed user who attached credentials nobody proved."""
+        import pyotp
+        pin = self.request_code()
+        user = User.objects.get(phone_number=P1)
+        user.set_password('squatter123')
+        user.google_sub = 'g-sub'
+        user.telegram_id = 'tg-id'
+        user.mfa_secret_key = pyotp.random_base32()
+        for name, value in fields.items():
+            setattr(user, name, value)
+        user.save()
+        return pin
+
+    def test_first_code_login_drops_unproven_credentials(self):
+        pin = self.squat()
+        response = test_client.otp_verify(P1, str(pin), 'a.com')
+        self.assertEqual(response.status_code, 200)
         self.assertIs(response.data['created'], True)
+        user = User.objects.get(phone_number=P1)
+        self.assertTrue(user.is_phone_number_confirmed)
+        self.assertFalse(user.has_usable_password())
+        self.assertEqual((user.google_sub, user.telegram_id, user.mfa_secret_key), ('', '', ''))
+
+    def test_unconfirmed_superuser_and_staff_keep_strict_totp_and_credentials(self):
+        import pyotp
+        for flags in ({'is_superuser': True, 'is_staff': True}, {'is_staff': True}):
+            User.objects.all().delete()
+            cache.clear()
+            pin = self.squat(**flags)
+            self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
+                             error_codes.INVALID_OTP)
+            user = User.objects.get(phone_number=P1)
+            self.assertFalse(user.is_phone_number_confirmed)
+            response = test_client.otp_verify(
+                P1, str(pin), 'a.com', otp=pyotp.TOTP(user.mfa_secret_key).now())
+            self.assertEqual(response.status_code, 200)
+            user = User.objects.get(phone_number=P1)
+            self.assertTrue(user.check_password('squatter123'))
+            self.assertEqual((user.google_sub, user.telegram_id), ('g-sub', 'tg-id'))
+            self.assertNotEqual(user.mfa_secret_key, '')
 
     def test_created_true_on_initial_confirmation_then_false(self):
         pin = self.request_code()
@@ -423,7 +466,7 @@ class OtpVerifyTestCase(TestCase):
         import pyotp
         key = pyotp.random_base32()
         pin = self.request_code()
-        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key, is_superuser=True, is_staff=True)
         self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com')),
                          error_codes.INVALID_OTP)
         self.assertFalse(User.objects.get(phone_number=P1).is_phone_number_confirmed)
@@ -434,7 +477,7 @@ class OtpVerifyTestCase(TestCase):
         import pyotp
         key = pyotp.random_base32()
         pin = self.request_code()
-        User.objects.filter(phone_number=P1).update(mfa_secret_key=key)
+        User.objects.filter(phone_number=P1).update(mfa_secret_key=key, is_phone_number_confirmed=True)
         wrong = '000000' if pyotp.TOTP(key).now() != '000000' else '111111'
         self.assertEqual(self.otp_error(test_client.otp_verify(P1, str(pin), 'a.com', otp=wrong)),
                          error_codes.INVALID_OTP)
@@ -454,7 +497,8 @@ class OtpVerifyTestCase(TestCase):
                 self.assertEqual(response.status_code, 400, args)
                 self.assertIn('code', response.data['errors'])
         User.objects.filter(phone_number=P1).update(
-            mfa_secret_key=pyotp.random_base32(), phone_number_confirmation_attempts=0)
+            mfa_secret_key=pyotp.random_base32(), phone_number_confirmation_attempts=0,
+            is_phone_number_confirmed=True)
         for value in bad:
             response = test_client.otp_verify(P1, str(pin), 'a.com', otp=value)
             self.assertEqual(self.otp_error(response), error_codes.INVALID_OTP)
