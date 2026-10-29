@@ -23,9 +23,11 @@ def free_number_from_unconfirmed_holder(user, phone_number: str) -> None:
 
     The confirmed candidate pin proves the number is this user's; a holder who
     never proved it (e.g. typed into otp_request and never verified) gives it
-    up. Confirmed holders, staff and superusers are left alone.
+    up. Confirmed holders, staff and superusers are left alone. The row lock
+    (the filter is re-checked after the wait) keeps a holder who confirms at
+    the same moment from being anonymized. Call inside a transaction.
     """
-    holder = CustomUser.objects.filter(
+    holder = CustomUser.objects.select_for_update().filter(
         site_id=user.site_id, phone_number=phone_number,
         is_phone_number_confirmed=False, is_staff=False, is_superuser=False,
     ).exclude(pk=user.pk).first()
@@ -71,7 +73,8 @@ def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, c
     is_main_pin_correct = received_pin == stored_pin and (stored_pin != 0 or has_candidate) or (django_settings.DEBUG and received_pin == 123456)
     is_candidate_pin_correct = None
     if getattr(user, candidate_credential_field):
-        is_candidate_pin_correct = getattr(user, candidate_pin_field) == received_candidate_pin or (django_settings.DEBUG and received_candidate_pin == 123456)
+        stored_candidate_pin = getattr(user, candidate_pin_field)
+        is_candidate_pin_correct = (received_candidate_pin == stored_candidate_pin and stored_candidate_pin != 0) or (django_settings.DEBUG and received_candidate_pin == 123456)
     if is_main_pin_correct and (is_candidate_pin_correct is None or is_candidate_pin_correct):
         setattr(user, current_pin_field, 0)
         setattr(user, candidate_pin_field, 0)

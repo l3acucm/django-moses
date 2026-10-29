@@ -780,6 +780,15 @@ class NumberChangeOntoShadowTestCase(TestCase):
         self.assertFalse(self.shadow.is_active)
         self.assertNotEqual(self.shadow.phone_number, P2)
 
+    def test_zero_candidate_pin_never_matches(self):
+        self.user, response = test_client.update_user(self.user, {'phone_number': P2})
+        User.objects.filter(pk=self.user.pk).update(phone_number_candidate_confirmation_pin=0)
+        self.user.refresh_from_db()
+        self.user, response = test_client.confirm_phone_number(self.user, utils.SENT_SMS[P1], 0)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.user.phone_number, P1)
+        self.assertEqual(self.anonymized, [])
+
     def test_staff_holder_is_kept(self):
         from django.db import IntegrityError, transaction
         User.objects.filter(pk=self.shadow.pk).update(is_staff=True)
