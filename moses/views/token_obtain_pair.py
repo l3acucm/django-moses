@@ -1,7 +1,7 @@
 from rest_framework.exceptions import NotFound
 from rest_framework_simplejwt.views import TokenViewBase
 
-from moses.conf import settings as moses_settings
+from moses.conf import login_methods, WITH_PASSWORD
 from moses.serializers import TokenObtainPairSerializer
 
 
@@ -14,6 +14,6 @@ class TokenObtainPairView(TokenViewBase):
         }
 
     def post(self, request, *args, **kwargs):
-        if moses_settings.PHONE_OTP_LOGIN:
+        if WITH_PASSWORD not in login_methods():
             raise NotFound()
         return super().post(request, *args, **kwargs)

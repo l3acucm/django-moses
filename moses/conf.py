@@ -1,4 +1,5 @@
 from django.conf import settings as django_settings
+from django.core.exceptions import ImproperlyConfigured
 from django.test.signals import setting_changed
 from django.utils.functional import LazyObject
 from django.utils.module_loading import import_string
@@ -7,6 +8,8 @@ from django.utils.translation import gettext as _
 from moses.constants import strings
 
 MOSES_SETTINGS_NAMESPACE = "MOSES"
+WITH_PASSWORD = "WITH_PASSWORD"
+WITHOUT_PASSWORD = "WITHOUT_PASSWORD"
 
 
 class ObjDict(dict):
@@ -36,8 +39,10 @@ default_settings = {
     # confirmed yet. Off it, confirmation can instead be enforced per-action
     # via @moses.decorators.phone_number_confirmed_required.
     "REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN": True,
-    # On, enables passwordless phone-OTP login (users/otp_request, otp_verify).
-    "PHONE_OTP_LOGIN": False,
+    # Enabled login paths. WITH_PASSWORD: token/obtain, user create, set/reset
+    # password. WITHOUT_PASSWORD: passwordless SMS code login (users/otp_request,
+    # otp_verify). Disabled paths answer 404. Non-empty, known values only.
+    "LOGIN_METHODS": [WITH_PASSWORD],
     # (max_requests, window_seconds) per client IP for otp_request; None = no limit.
     "PHONE_OTP_REQUEST_IP_LIMIT": None,
     # (max_codes, window_seconds) of codes sent per (site, phone) by otp_request; None = no cap.
@@ -83,6 +88,15 @@ class Settings:
         self._load_default_settings()
         self._override_settings(overriden_settings)
         self._init_settings_to_import()
+        self._validate_login_methods()
+
+    def _validate_login_methods(self):
+        methods = self.LOGIN_METHODS
+        if not methods or not set(methods) <= {WITH_PASSWORD, WITHOUT_PASSWORD}:
+            raise ImproperlyConfigured(
+                "MOSES['LOGIN_METHODS'] must be a non-empty list of %r / %r, got %r"
+                % (WITH_PASSWORD, WITHOUT_PASSWORD, methods)
+            )
 
     def _load_default_settings(self):
         for setting_name, setting_value in default_settings.items():
@@ -115,6 +129,10 @@ class LazySettings(LazyObject):
 
 
 settings = LazySettings()
+
+
+def login_methods():
+    return frozenset(settings.LOGIN_METHODS)
 
 
 def reload_moses_settings(*args, **kwargs):

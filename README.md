@@ -325,13 +325,13 @@ def handle_email_confirmed(sender, user, email, is_initial_confirmation, **kwarg
 
 ## Phone OTP login
 
-Opt-in passwordless login by SMS code. Off by default; with the flag off nothing changes.
+Opt-in passwordless login by SMS code, enabled via `LOGIN_METHODS` (default `['WITH_PASSWORD']`; `PHONE_OTP_LOGIN` was removed). Values: `WITH_PASSWORD` (token/obtain, user create, set/reset password) and `WITHOUT_PASSWORD` (otp_request, otp_verify); a disabled method's endpoints answer 404. Use `['WITH_PASSWORD', 'WITHOUT_PASSWORD']` for both; empty or unknown values raise `ImproperlyConfigured`.
 Run `migrate` after upgrading to 0.18.0 (migration `0007_email_unique_unless_blank`: `(site, email)` is unique only when the email is non-blank).
 
 ```python
 MOSES = {
     ...
-    'PHONE_OTP_LOGIN': True,
+    'LOGIN_METHODS': ['WITHOUT_PASSWORD'],
     'PHONE_OTP_REQUEST_IP_LIMIT': (20, 3600),  # optional: (count, seconds) per client IP, default None
     'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400),  # optional: codes sent per (site, phone), default None
 }

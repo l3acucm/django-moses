@@ -13,7 +13,7 @@ from test_project.app_for_tests import utils
 test_client = APIClient('')
 User = get_user_model()
 
-MOSES = {**settings.MOSES, "PHONE_OTP_LOGIN": True, "PHONE_OTP_REQUEST_IP_LIMIT": (3, 600)}
+MOSES = {**settings.MOSES, "LOGIN_METHODS": ["WITHOUT_PASSWORD"], "PHONE_OTP_REQUEST_IP_LIMIT": (3, 600)}
 P1, P2, P3, P4 = ('+99650700000%d' % i for i in (1, 2, 3, 4))
 
 

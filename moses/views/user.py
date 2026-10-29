@@ -19,7 +19,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from moses.common import error_codes
 from moses.common.exceptions import KwargsError, CustomAPIException
-from moses.conf import settings as moses_settings
+from moses.conf import settings as moses_settings, login_methods, WITH_PASSWORD, WITHOUT_PASSWORD
 from moses.decorators import otp_required
 from moses.enums import Credential
 from moses.models import CustomUser
@@ -39,9 +39,13 @@ class UserViewSet(viewsets.ModelViewSet):
     lookup_field = djoser_settings.USER_ID_FIELD
 
     def initial(self, request, *args, **kwargs):
-        if moses_settings.PHONE_OTP_LOGIN and (
-                self.action in ("create", "set_password", "reset_password", "reset_password_confirm", "destroy")
-                or (self.action == "me" and request.method == "DELETE")):
+        methods = login_methods()
+        if WITH_PASSWORD not in methods and self.action in (
+                "create", "set_password", "reset_password", "reset_password_confirm"):
+            raise NotFound()
+        # ponytail: self-delete stays 404 with WITHOUT_PASSWORD as in 0.18.1; Task 3 replaces it with anonymization.
+        if WITHOUT_PASSWORD in methods and (
+                self.action == "destroy" or (self.action == "me" and request.method == "DELETE")):
             raise NotFound()
         super().initial(request, *args, **kwargs)
 
@@ -368,7 +372,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def otp_request(self, request):
-        if not moses_settings.PHONE_OTP_LOGIN:
+        if WITHOUT_PASSWORD not in login_methods():
             raise NotFound()
         otp_login.check_request_ip_limit(request)
         otp_login.request_login_code(
@@ -377,7 +381,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["post"], detail=False)
     def otp_verify(self, request):
-        if not moses_settings.PHONE_OTP_LOGIN:
+        if WITHOUT_PASSWORD not in login_methods():
             raise NotFound()
         user = CustomUser.objects.filter(
             site__domain=otp_login.text_field(request, 'domain'),
