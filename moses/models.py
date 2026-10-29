@@ -118,6 +118,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
     password_reset_code_attempts = models.PositiveSmallIntegerField(
         default=0,
+        db_default=0,  # kept in the DB so a not-yet-upgraded process can still insert users
         verbose_name=_("Password reset code attempts")
     )
 

@@ -18,6 +18,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='customuser',
             name='password_reset_code_attempts',
-            field=models.PositiveSmallIntegerField(default=0, verbose_name='Password reset code attempts'),
+            field=models.PositiveSmallIntegerField(db_default=0, default=0, verbose_name='Password reset code attempts'),
         ),
     ]

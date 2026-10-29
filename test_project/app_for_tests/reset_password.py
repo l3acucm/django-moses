@@ -230,3 +230,15 @@ class ResetPasswordPerPhoneCapTestCase(TestCase):
                                       if k != 'PHONE_OTP_CODES_PER_PHONE_LIMIT'}):
             for _ in range(5):
                 self.assertEqual(self.reset().status_code, 204)
+
+
+class ResetPasswordAttemptsColumnTestCase(TestCase):
+    def test_column_keeps_a_database_default(self):
+        # An old process still running during a rolling deploy inserts users without the column.
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_name = %s AND column_name = 'password_reset_code_attempts'",
+                [CustomUser._meta.db_table])
+            self.assertEqual(cursor.fetchone()[0], '0')
