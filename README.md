@@ -355,7 +355,8 @@ this way. There is no DEBUG master code. `phone_number_confirmed` receivers run 
 row lock on the user: keep them quick, and an exception in one fails the login.
 
 While the flag is on, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
-`reset_password_confirm` and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
+`reset_password_confirm`, self-deletion (`DELETE /moses/users/me/` and `DELETE /moses/users/{id}/`; it is gated by
+`current_password`) and the password token endpoint (`token_obtain_pair`). Django admin login is unchanged.
 
 Both limits count in Django's cache, so it must be shared and atomic (Redis or Memcached); LocMem is per process.
 

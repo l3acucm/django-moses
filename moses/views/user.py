@@ -39,8 +39,9 @@ class UserViewSet(viewsets.ModelViewSet):
     lookup_field = djoser_settings.USER_ID_FIELD
 
     def initial(self, request, *args, **kwargs):
-        if moses_settings.PHONE_OTP_LOGIN and self.action in (
-                "create", "set_password", "reset_password", "reset_password_confirm"):
+        if moses_settings.PHONE_OTP_LOGIN and (
+                self.action in ("create", "set_password", "reset_password", "reset_password_confirm", "destroy")
+                or (self.action == "me" and request.method == "DELETE")):
             raise NotFound()
         super().initial(request, *args, **kwargs)
 

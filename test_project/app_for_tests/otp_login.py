@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.sites.models import Site
@@ -496,3 +498,42 @@ class PasswordPathsTestCase(TestCase):
         user.set_password('pass12345')
         user.save()
         self.assertEqual(test_client.login(P1, 'pass12345', 'a.com')[1].status_code, 200)
+
+
+class SelfDeletionTestCase(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient as DrfClient
+        from django.urls import reverse
+        self.reverse = reverse
+        self.api = DrfClient()
+        self.user = User(phone_number=P1, site=Site.objects.create(domain='a.com'), is_phone_number_confirmed=True)
+        self.user.set_password('pass12345')
+        self.user.save()
+        self.api.force_authenticate(self.user)
+
+    def delete_me(self):
+        return self.api.delete(self.reverse('moses:customuser-me'), {'current_password': 'pass12345'}, format='json')
+
+    def test_delete_me_404_when_on_and_user_kept(self):
+        with override_settings(MOSES=MOSES):
+            self.assertEqual(self.delete_me().status_code, 404)
+        self.assertTrue(User.objects.filter(id=self.user.id).exists())
+
+    def test_destroy_404_when_on_and_user_kept(self):
+        with override_settings(MOSES=MOSES):
+            response = self.api.delete(self.reverse('moses:customuser-detail', args=[self.user.id]),
+                                       {'current_password': 'pass12345'}, format='json')
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(User.objects.filter(id=self.user.id).exists())
+
+    def test_get_and_patch_me_work_when_on(self):
+        with override_settings(MOSES=MOSES):
+            self.assertEqual(self.api.get(self.reverse('moses:customuser-me')).status_code, 200)
+            self.assertEqual(
+                self.api.patch(self.reverse('moses:customuser-me'), {'name': 'Bob'}, format='json').status_code, 200)
+
+    def test_delete_me_works_when_off(self):
+        # logout_user is stubbed: djoser's TOKEN_MODEL has no manager in the test project (unrelated)
+        with mock.patch('moses.views.user.utils.logout_user'):
+            self.assertEqual(self.delete_me().status_code, 204)
+        self.assertFalse(User.objects.filter(id=self.user.id).exists())
