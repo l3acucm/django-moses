@@ -336,7 +336,8 @@ MOSES = {
     ...
     'LOGIN_METHODS': ['WITHOUT_PASSWORD'],
     'PHONE_OTP_REQUEST_IP_LIMIT': (20, 3600),  # optional: (count, seconds) per client IP, default None
-    'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400),  # optional: codes sent per (site, phone), default None
+    'PHONE_OTP_CODES_PER_PHONE_LIMIT': (3, 86400),  # optional: unused codes per (site, phone), default None
+    'PHONE_OTP_CODE_TTL_SECONDS': 900,  # optional: login code lifetime, default None (valid until used)
 }
 ```
 
@@ -345,7 +346,9 @@ Creates the user (unusable password) if the number is new and sends a code; an i
 code. A blank, too long (over 20 chars) or validator-rejected number gives 400 `invalid_phone_number`; an unknown domain
 gives 400 `site_with_domain_does_not_exist`. `too_frequent_sms_requests` is 400 for the per-phone resend pause
 (`PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD`) and 429 over `PHONE_OTP_REQUEST_IP_LIMIT`. Over
-`PHONE_OTP_CODES_PER_PHONE_LIMIT` the answer is 429 `phone_otp_codes_limit_reached`; only codes actually sent count.
+`PHONE_OTP_CODES_PER_PHONE_LIMIT` the answer is 429 `phone_otp_codes_limit_reached`; only codes actually sent count,
+and a successful `otp_verify` takes its code off the count. The per-IP limit also covers user create, `reset_password`,
+`request_phone_number_confirmation_pin` and a profile update that sets a new phone number (one shared counter).
 
 **POST `/moses/users/otp_verify/`** `{"phone_number": "+996...", "code": "123456", "domain": "example.com"}` -> `{"access": "...", "refresh": "...", "created": true}`.
 `created` is true exactly when this verify did the user's initial phone confirmation (the same moment
@@ -354,7 +357,12 @@ for brand-new accounts; false for every later login. A failed TOTP doesn't confi
 A wrong or unknown code gives 400 `{"code": [incorrect_confirmation_pin]}`; too many attempts give `attempts_limit_reached`.
 A superuser or a user with an MFA key must also send `"otp"` (their TOTP); a missing or wrong one gives 400
 `{"otp": [invalid_otp]}`, costs an attempt and keeps the SMS code valid. A superuser without an MFA key can't log in
-this way. There is no DEBUG master code. `phone_number_confirmed` receivers run inside the verify transaction, under a
+this way. There is no DEBUG master code. Exception: while the number is not confirmed yet, a non-staff user needs no
+TOTP, and that first successful verify drops the password, `google_sub`, `telegram_id` and MFA key (whoever attached
+them never proved the number). With `PHONE_OTP_CODE_TTL_SECONDS` a code older than that (counted from
+`phone_number_confirmation_pin_created_at`; `otp_login.login_code_expired(user)`) answers like a wrong code without
+costing an attempt. Failed verifies are counted per client IP with the `PHONE_OTP_REQUEST_IP_LIMIT` numbers; over it
+the IP gets 429 `too_frequent_sms_requests` before the user is looked up. `phone_number_confirmed` receivers run inside the verify transaction, under a
 row lock on the user: keep them quick, and an exception in one fails the login.
 
 Without `WITH_PASSWORD`, these return 404: user create (`POST /moses/users/`), `set_password`, `reset_password`,
@@ -400,6 +408,24 @@ def wipe_profile(sender, user, **kwargs):
 ```
 
 ## Changelog
+
+### 0.19.1
+
+Security fixes. Run `migrate` (migration `0008`: `password_reset_code_attempts`, `phone_number_confirmation_pin_created_at`).
+
+- Password-reset code: `PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT` wrong guesses burn it (then `attempts_limit_reached`
+  until a new code is sent), the right code works once. A new reset code restores the attempts.
+- `otp_verify` on a not yet confirmed number (non-staff): no TOTP asked; the password, `google_sub`, `telegram_id` and
+  MFA key set before the number was proven are cleared. Superusers, staff and confirmed users are unchanged.
+- `PHONE_OTP_REQUEST_IP_LIMIT` now also applies to user create, `reset_password`, `request_phone_number_confirmation_pin`
+  and a profile update with a new phone number, and (as a separate count of failures) to `otp_verify`.
+- `PHONE_OTP_CODES_PER_PHONE_LIMIT` counts only unused codes: a successful login takes its code off the count.
+- New `PHONE_OTP_CODE_TTL_SECONDS` (default `None`): login codes older than that are refused. Projects that set
+  `phone_number_confirmation_pin` themselves must also set `phone_number_confirmation_pin_created_at`, or the code
+  counts as expired.
+- Confirming a number change onto a number held by a never-confirmed, non-staff user anonymizes that holder
+  (`user_anonymized` fires) instead of a 500. `PATCH me` by an unconfirmed user onto a taken number gives 400
+  `phone_number_already_registered_on_domain` instead of a 500.
 
 ### 0.19.0
 
