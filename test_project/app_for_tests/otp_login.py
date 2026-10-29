@@ -258,7 +258,8 @@ class OtpFlagOffTestCase(TestCase):
         self.assertEqual(test_client.otp_request(P1, 'a.com').status_code, 404)
 
 
-@override_settings(MOSES=MOSES)
+# Without the IP limit: these tests make more failed verifies than it allows.
+@override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None})
 class OtpVerifyTestCase(TestCase):
     def setUp(self):
         self.site = Site.objects.create(domain='a.com')
@@ -706,3 +707,40 @@ class OtpCodeTtlTestCase(TestCase):
     def test_registration_code_gets_send_time(self):
         user = User.objects.create_user(phone_number=P2, password='pass12345', site=Site.objects.get(domain='a.com'))
         self.assertIsNotNone(user.phone_number_confirmation_pin_created_at)
+
+
+@override_settings(MOSES=MOSES)
+class OtpVerifyIpLimitTestCase(TestCase):
+    """Failed otp_verify calls are counted per IP with PHONE_OTP_REQUEST_IP_LIMIT's numbers."""
+
+    def setUp(self):
+        Site.objects.create(domain='a.com')
+        utils.SENT_SMS = {}
+        cache.clear()
+
+    def test_ip_refused_after_limit_failures_without_touching_the_user(self):
+        self.assertEqual(test_client.otp_request(P1, 'a.com', ip='9.9.9.9').status_code, 200)
+        pin = utils.SENT_SMS[P1]
+        wrong = str(pin + 1 if pin < 999999 else pin - 1)
+        self.assertEqual(test_client.otp_verify(P2, wrong, 'a.com', ip='1.1.1.1').status_code, 400)  # unknown
+        for _ in range(2):
+            self.assertEqual(test_client.otp_verify(P1, wrong, 'a.com', ip='1.1.1.1').status_code, 400)
+        response = test_client.otp_verify(P1, str(pin), 'a.com', ip='1.1.1.1')
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(code(response), error_codes.TOO_FREQUENT_SMS_REQUESTS)
+        user = User.objects.get(phone_number=P1)
+        self.assertEqual(user.phone_number_confirmation_attempts, 2)
+        self.assertFalse(user.is_phone_number_confirmed)
+        self.assertEqual(test_client.otp_verify(P1, str(pin), 'a.com', ip='2.2.2.2').status_code, 200)
+
+    def test_successes_are_not_counted(self):
+        for phone in (P1, P2, P3, P4):
+            cache.delete('moses:otp_ip:9.9.9.9')
+            self.assertEqual(test_client.otp_request(phone, 'a.com', ip='9.9.9.9').status_code, 200)
+            self.assertEqual(
+                test_client.otp_verify(phone, str(utils.SENT_SMS[phone]), 'a.com', ip='1.1.1.1').status_code, 200)
+
+    def test_no_limit_when_setting_is_none(self):
+        with override_settings(MOSES={**MOSES, "PHONE_OTP_REQUEST_IP_LIMIT": None}):
+            for _ in range(5):
+                self.assertEqual(test_client.otp_verify(P1, '111111', 'a.com', ip='1.1.1.1').status_code, 400)

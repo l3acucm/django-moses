@@ -66,7 +66,7 @@ class APIClient:
         )
         return UserViewSet.as_view({'post': 'otp_request'})(request)
 
-    def otp_verify(self, phone_number, code, domain, otp=None):
+    def otp_verify(self, phone_number, code, domain, otp=None, ip=None):
         from moses.views.user import UserViewSet
         data = {'phone_number': phone_number, 'code': code, 'domain': domain}
         if otp is not None:
@@ -75,6 +75,7 @@ class APIClient:
             reverse('moses:customuser-otp-verify'),
             json.dumps(data),
             content_type='application/json',
+            **({'REMOTE_ADDR': ip} if ip else {}),
         )
         return UserViewSet.as_view({'post': 'otp_verify'})(request)
 

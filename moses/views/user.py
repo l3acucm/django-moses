@@ -404,17 +404,23 @@ class UserViewSet(viewsets.ModelViewSet):
     def otp_verify(self, request):
         if WITHOUT_PASSWORD not in login_methods():
             raise NotFound()
-        user = CustomUser.objects.filter(
-            site__domain=otp_login.text_field(request, 'domain'),
-            phone_number=otp_login.text_field(request, 'phone_number'),
-        ).first()
-        # Unknown and inactive users look exactly like a wrong code.
-        if user is None or not user.is_active:
-            raise otp_login.wrong_code_error()
-        result = otp_login.verify_login_code(
-            user, otp_login.text_field(request, 'code'), otp_login.text_field(request, 'otp'))
-        if result is None:
-            raise otp_login.wrong_code_error()
+        # Refused before touching the user, so a guessing IP can't burn anyone's attempts.
+        otp_login.check_verify_ip_limit(request)
+        try:
+            user = CustomUser.objects.filter(
+                site__domain=otp_login.text_field(request, 'domain'),
+                phone_number=otp_login.text_field(request, 'phone_number'),
+            ).first()
+            # Unknown and inactive users look exactly like a wrong code.
+            if user is None or not user.is_active:
+                raise otp_login.wrong_code_error()
+            result = otp_login.verify_login_code(
+                user, otp_login.text_field(request, 'code'), otp_login.text_field(request, 'otp'))
+            if result is None:
+                raise otp_login.wrong_code_error()
+        except CustomAPIException:
+            otp_login.count_failed_verify(request)
+            raise
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh), **result})
 

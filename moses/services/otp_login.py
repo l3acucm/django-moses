@@ -40,16 +40,33 @@ def count_hit(key: str, window: int) -> int:
         return 1
 
 
+def ip_limit_error() -> CustomAPIException:
+    return CustomAPIException(
+        {'': [KwargsError(code=error_codes.TOO_FREQUENT_SMS_REQUESTS)]},
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+
+
 def check_request_ip_limit(request) -> None:
     limit = moses_settings.PHONE_OTP_REQUEST_IP_LIMIT
     if limit is None:
         return
     max_requests, window = limit
     if count_hit(f'moses:otp_ip:{client_ip(request)}', window) > max_requests:
-        raise CustomAPIException(
-            {'': [KwargsError(code=error_codes.TOO_FREQUENT_SMS_REQUESTS)]},
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
+        raise ip_limit_error()
+
+
+def check_verify_ip_limit(request) -> None:
+    """Refuses an IP that made PHONE_OTP_REQUEST_IP_LIMIT failed verifies in the window."""
+    limit = moses_settings.PHONE_OTP_REQUEST_IP_LIMIT
+    if limit is not None and cache.get(f'moses:otp_verify_ip:{client_ip(request)}', 0) >= limit[0]:
+        raise ip_limit_error()
+
+
+def count_failed_verify(request) -> None:
+    limit = moses_settings.PHONE_OTP_REQUEST_IP_LIMIT
+    if limit is not None:
+        count_hit(f'moses:otp_verify_ip:{client_ip(request)}', limit[1])
 
 
 def phone_codes_key(user: CustomUser) -> str:
