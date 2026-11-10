@@ -1,4 +1,4 @@
-name: Test and merge
+name: Test
 on:
   push:
     branches:
@@ -17,18 +17,11 @@ jobs:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
-      - uses: actions/checkout@master
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Run image
         uses: abatilo/actions-poetry@v2
       - name: Test
         run: poetry install && poetry run pytest
-      - name: Merge dev -> main
-        uses: devmasx/merge-branch@v1.3.1
-        with:
-          type: now
-          from_branch: dev
-          target_branch: main
-          github_token: ${{ github.token }}
