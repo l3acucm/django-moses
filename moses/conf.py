@@ -1,10 +1,15 @@
 from django.conf import settings as django_settings
+from django.core.exceptions import ImproperlyConfigured
 from django.test.signals import setting_changed
 from django.utils.functional import LazyObject
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext as _
 
+from moses.constants import strings
+
 MOSES_SETTINGS_NAMESPACE = "MOSES"
+WITH_PASSWORD = "WITH_PASSWORD"
+WITHOUT_PASSWORD = "WITHOUT_PASSWORD"
 
 
 class ObjDict(dict):
@@ -24,22 +29,52 @@ class ObjDict(dict):
 
 default_settings = {
     "PHONE_NUMBER_VALIDATOR": None,
+    "SHORT_USER_SERIALIZER": None,
     "DEFAULT_LANGUAGE": None,
     "SEND_SMS_HANDLER": None,
+    "REQUIRE_EMAIL_CONFIRMATION": True,
+    "EMAILS_DISABLED": False,
+    "REQUIRE_PHONE_NUMBER_CONFIRMATION": True,
+    # Blocks login (token issuance) for users whose phone number isn't
+    # confirmed yet. Off it, confirmation can instead be enforced per-action
+    # via @moses.decorators.phone_number_confirmed_required.
+    "REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN": True,
+    # Enabled login paths. WITH_PASSWORD: token/obtain, user create, set/reset
+    # password. WITHOUT_PASSWORD: passwordless SMS code login (users/otp_request,
+    # otp_verify). Disabled paths answer 404. Non-empty, known values only.
+    "LOGIN_METHODS": [WITH_PASSWORD],
+    # (max_requests, window_seconds) per client IP for otp_request; None = no limit.
+    "PHONE_OTP_REQUEST_IP_LIMIT": None,
+    # (max_codes, window_seconds) of codes sent per (site, phone) by otp_request; None = no cap.
+    "PHONE_OTP_CODES_PER_PHONE_LIMIT": None,
+    # Seconds a login code stays valid in otp_verify (and the admin code login); None = until used.
+    "PHONE_OTP_CODE_TTL_SECONDS": None,
+    # Off (default), ResetPasswordSerializer only matches a user whose phone
+    # (or email) is already confirmed — same credential a user needs to log
+    # in. On, an unconfirmed user can still request/complete a password
+    # reset; useful for apps where phone confirmation and password recovery
+    # are deliberately independent gates.
+    "CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION": False,
     "DOMAIN": None,
+    "SENDER_EMAIL": None,
     "URL_PREFIX": None,
     "IP_HEADER": None,
     "PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT": 3,
     "EMAIL_CONFIRMATION_ATTEMPTS_LIMIT": 3,
-    "PASSWORD_RESET_SMS_MINUTES_PERIOD": 1,
-    "PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD": 1,
-    "PASSWORD_RESET_TIMEOUT_MINUTES": 5,
+    "PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD": 30,
+    "PASSWORD_RESET_TIMEOUT_SECONDS": 300,
     "LANGUAGE_CHOICES": (
         ("en", _("English")),
     ),
+    "GOOGLE_OAUTH2_CLIENT_ID": None,
+    "GOOGLE_AUTH_TEMP_TOKEN_EXPIRY_MINUTES": 5,
+    "TELEGRAM_BOT_TOKEN": None,
+    "TELEGRAM_AUTH_TEMP_TOKEN_EXPIRY_MINUTES": 5,
+    "TELEGRAM_AUTH_DATA_MAX_AGE_SECONDS": 300,
+    "MESSAGE_TEMPLATES": strings.DEFAULT_MESSAGE_TEMPLATES,
 }
 
-SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR"]
+SETTINGS_TO_IMPORT = ["SEND_SMS_HANDLER", "PHONE_NUMBER_VALIDATOR", "SHORT_USER_SERIALIZER"]
 
 
 class Settings:
@@ -55,10 +90,29 @@ class Settings:
         self._load_default_settings()
         self._override_settings(overriden_settings)
         self._init_settings_to_import()
+        self._validate_login_methods(overriden_settings)
+
+    def _validate_login_methods(self, overriden_settings):
+        if 'PHONE_OTP_LOGIN' in overriden_settings:
+            raise ImproperlyConfigured("PHONE_OTP_LOGIN was removed in 0.19; use LOGIN_METHODS")
+        methods = self.LOGIN_METHODS
+        if not isinstance(methods, (list, tuple, set, frozenset)):
+            raise ImproperlyConfigured(
+                "MOSES['LOGIN_METHODS'] must be a list of %r / %r, got %r" % (WITH_PASSWORD, WITHOUT_PASSWORD, methods))
+        if not methods or not set(methods) <= {WITH_PASSWORD, WITHOUT_PASSWORD}:
+            raise ImproperlyConfigured(
+                "MOSES['LOGIN_METHODS'] must be a non-empty list of %r / %r, got %r"
+                % (WITH_PASSWORD, WITHOUT_PASSWORD, methods)
+            )
 
     def _load_default_settings(self):
         for setting_name, setting_value in default_settings.items():
             if setting_name.isupper():
+                # Copy dict defaults so the in-place merge in _override_settings
+                # never mutates the module-level default_settings between
+                # Settings instances (e.g. across setting_changed reloads).
+                if isinstance(setting_value, dict):
+                    setting_value = dict(setting_value)
                 setattr(self, setting_name, setting_value)
 
     def _override_settings(self, overriden_settings: dict):
@@ -82,6 +136,10 @@ class LazySettings(LazyObject):
 
 
 settings = LazySettings()
+
+
+def login_methods():
+    return frozenset(settings.LOGIN_METHODS)
 
 
 def reload_moses_settings(*args, **kwargs):

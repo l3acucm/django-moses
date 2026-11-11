@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
-from moses import errors
+from moses.common import error_codes
 from moses.models import CustomUser
 from test_project.app_for_tests.confirmations import test_client
 
@@ -34,7 +34,7 @@ class RegistrationTestCase(TestCase):
             domain='exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['non_field_errors'], [errors.EMAIL_ALREADY_REGISTERED_ON_DOMAIN])
+        self.assertEqual(response.data['errors'][''][0]['error_code'], error_codes.EMAIL_ALREADY_REGISTERED_ON_DOMAIN)
         self.assertEqual(len(response.data), 1)
 
     def cant_register_if_email_already_registered(self):
@@ -46,7 +46,7 @@ class RegistrationTestCase(TestCase):
             domain='exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['non_field_errors'], [errors.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN])
+        self.assertEqual(response.data['non_field_errors'], error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
         self.assertEqual(len(response.data), 1)
 
     def test_cant_register_on_non_existent_site(self):
@@ -58,8 +58,8 @@ class RegistrationTestCase(TestCase):
             domain='not.exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['domain'], [errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST])
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['errors']['domain'][0]['error_code'],
+                         error_codes.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
 
     def test_error_on_custom_phone_number_validator(self):
         user, response = test_client.create_user(
@@ -70,8 +70,7 @@ class RegistrationTestCase(TestCase):
             domain='exists.com'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['phone_number'], [errors.INCORRECT_PHONE_NUMBER])
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['errors']['phone_number'][0]['error_code'], error_codes.INVALID_PHONE_NUMBER)
 
     def test_can_register_on_another_site_with_same_email_and_phone_number(self):
         user, response = test_client.create_user(

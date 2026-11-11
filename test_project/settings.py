@@ -33,8 +33,18 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     "rest_framework",
-    "moses"
+    "moses",
+    # After moses, so moses/templates/admin/login.html wins.
+    "django.contrib.admin",
 ]
+
+MIDDLEWARE = [
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+STATIC_URL = "/static/"
 
 TEMPLATES = [
     {
@@ -53,8 +63,8 @@ TEMPLATES = [
 ]
 MOSES = {
     "PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT": 4,
-    "PASSWORD_RESET_SMS_MINUTES_PERIOD": 1,
-    "PASSWORD_RESET_TIMEOUT_MINUTES": 5,
+    "PASSWORD_RESET_SMS_SECONDS_PERIOD": 60,
+    "PASSWORD_RESET_TIMEOUT_SECONDS": 300,
     "EMAIL_CONFIRMATION_ATTEMPTS_LIMIT": 3,
     'MINUTES_BETWEEN_CONFIRMATION_PIN_SMS': 0,
     "SEND_SMS_HANDLER": "test_project.app_for_tests.mocks.send_sms_handler",
@@ -85,6 +95,12 @@ DJOSER = {
 FIXTURE_DIRS = [
     'test_project/app_for_tests/fixtures'
 ]
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'moses.common.renderers.CustomJSONRenderer',
+    ],
+    'EXCEPTION_HANDLER': 'moses.common.exception_handlers.custom_exception_handler',
+}
 if MACOS:
     GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
     GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'

@@ -1,27 +1,81 @@
-from datetime import timedelta
-
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.models import Site
-from django.core import exceptions as django_exceptions
-from django.core.validators import EmailValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.utils import timezone
-from django.utils.translation import gettext as _
 from djoser import constants
-from rest_framework import serializers, exceptions
-from rest_framework.exceptions import ValidationError
+from rest_framework import serializers, status
 from rest_framework.fields import CharField
 from rest_framework.serializers import raise_errors_on_nested_writes, ModelSerializer, Serializer
 from rest_framework.utils import model_meta
 from rest_framework_simplejwt.serializers import TokenObtainSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from moses import errors
+from moses.common import error_codes
+from moses.common.exceptions import CustomAPIException, KwargsError
 from moses.conf import settings as moses_settings
-from moses.models import CustomUser, Credential, SMSType
+from moses.enums import Credential
+from moses.models import CustomUser
+from moses.services.credentials_confirmation import send_credential_confirmation_code
+from moses.services.reset_password import use_password_reset_code
+from moses.validators import EmailValidator, PasswordValidator
+
+
+class CustomEmailField(serializers.EmailField):
+    """Custom email field that raises CustomAPIException for all validation errors."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Use the custom EmailValidator
+        self.validators = [EmailValidator(field_name='email')]
+
+    def run_validation(self, data=serializers.empty):
+        """Override to handle required field validation with CustomAPIException."""
+        # Check if field is required and value is empty
+        if data is serializers.empty or not data:
+            if self.required:
+                raise CustomAPIException({
+                    'email': [
+                        KwargsError(
+                            code=error_codes.FIELD_IS_REQUIRED,
+                            kwargs={'provided_email': ''}
+                        )
+                    ]
+                })
+            return self.get_default()
+
+        # Proceed with normal validation (which will call EmailValidator)
+        return super().run_validation(data)
+
+
+class CustomPasswordField(serializers.CharField):
+    """Custom password field that raises CustomAPIException for all validation errors."""
+
+    def __init__(self, field_name='password', **kwargs):
+        self.field_name = field_name
+        kwargs.setdefault('style', {'input_type': 'password'})
+        kwargs.setdefault('write_only', True)
+        super().__init__(**kwargs)
+        # Use the custom PasswordValidator
+        self.validators = [PasswordValidator(field_name=self.field_name)]
+
+    def run_validation(self, data=serializers.empty):
+        """Override to handle required field validation with CustomAPIException."""
+        # Check if field is required and value is empty
+        if data is serializers.empty or not data:
+            if self.required:
+                raise CustomAPIException({
+                    self.field_name: [
+                        KwargsError(
+                            code=error_codes.FIELD_IS_REQUIRED,
+                            kwargs={}
+                        )
+                    ]
+                })
+            return self.get_default()
+
+        # Proceed with normal validation (which will call PasswordValidator)
+        return super().run_validation(data)
 
 
 class PinSerializer(Serializer):
@@ -45,35 +99,27 @@ class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False)
     phone_number = serializers.CharField(required=False)
 
-    default_error_messages = {
-        'email_not_found': constants.Messages.EMAIL_NOT_FOUND,
-        'phone_number_not_found': _('User with given phone number does not exist.')
-    }
-
     def validate_email(self, value):
         users = self.context['view'].get_users_by_email(value)
         if not users.exists():
-            self.fail('email_not_found')
+            raise CustomAPIException({
+                'email': [
+                    KwargsError(error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                ]
+            })
         else:
             return value
 
     def validate_phone_number(self, value):
         users = self.context['view'].get_users_by_phone_number(value)
         if not users.exists():
-            self.fail('phone_number_not_found')
+            raise CustomAPIException({
+                'phone_number': [
+                    KwargsError(error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                ]
+            })
         else:
             return value
-
-
-class ShortCustomUserSerializer(serializers.ModelSerializer):
-    income_subscription = serializers.BooleanField(read_only=True)
-    outcome_subscription = serializers.BooleanField(read_only=True)
-
-    class Meta:
-        model = CustomUser
-        fields = ['id', 'first_name', 'last_name', 'outcome_subscription', 'income_subscription']
-        read_only_fields = ['id', 'first_name', 'last_name', 'income_subscription',
-                            'outcome_subscription']
 
 
 class PublicCustomUserSerializer(serializers.ModelSerializer):
@@ -92,63 +138,77 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
     def get_is_mfa_enabled(self, obj):
         return len(obj.mfa_secret_key) > 0
 
-    def update(self, instance, validated_data):
+    def _update_credential(self, user, credential: Credential, value: str):
+        match credential:
+            case Credential.PHONE_NUMBER:
+                is_confirmed_field = 'is_phone_number_confirmed'
+                credential_field = 'phone_number'
+                candidate_credential_field = 'phone_number_candidate'
+                attempts_field = 'phone_number_confirmation_attempts'
+                credential_pin_field = 'phone_number_confirmation_pin'
+                candidate_credential_pin_field = 'phone_number_candidate_confirmation_pin'
+            case Credential.EMAIL:
+                is_confirmed_field = 'is_email_confirmed'
+                credential_field = 'email'
+                candidate_credential_field = 'email_candidate'
+                attempts_field = 'email_confirmation_attempts'
+                credential_pin_field = 'email_confirmation_pin'
+                candidate_credential_pin_field = 'email_candidate_confirmation_pin'
+        if getattr(user, credential_field) == value:
+            setattr(user, candidate_credential_field, '')
+            setattr(user, credential_pin_field, 0)
+            setattr(user, candidate_credential_pin_field, 0)
+            setattr(user, attempts_field, 0)
+        elif value != (getattr(user, candidate_credential_field) or getattr(user, credential_field)):
+            if getattr(user, is_confirmed_field):
+                setattr(user, candidate_credential_field, value)
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=False,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=True,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+            else:
+                # An unconfirmed user's number changes at once, so a taken one would hit the unique constraint.
+                if credential == Credential.PHONE_NUMBER and CustomUser.objects.filter(
+                        site_id=user.site_id, phone_number=value).exclude(pk=user.pk).exists():
+                    raise CustomAPIException({'phone_number': [KwargsError(
+                        kwargs={'phone_number': value}, code=error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)]})
+                send_credential_confirmation_code(
+                    user,
+                    credential,
+                    candidate=False,
+                    generate_new=True,
+                    ignore_frequency_limit=True
+                )
+                setattr(user, credential_field, value)
+        setattr(user, attempts_field, 0)
+        user.save()
+
+    def update(self, user, validated_data):
         raise_errors_on_nested_writes('update', self, validated_data)
-        info = model_meta.get_field_info(instance)
-        if 'phone_number' in validated_data:
-            _phone_number = validated_data.pop('phone_number')
-            if _phone_number == instance.phone_number:
-                instance.phone_number_candidate = ''
-                instance.phone_number_confirm_pin = 0
-                instance.phone_number_candidate_confirm_pin = 0
-                instance.phone_number_confirm_attempts = 0
-                instance.save()
-            elif _phone_number != (instance.phone_number_candidate or instance.phone_number):
-                if instance.is_phone_number_confirmed:
-                    instance.phone_number_candidate = _phone_number
-                    instance.phone_number_confirm_attempts = 0
-                    instance.save()
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=False,
-                                                               generate_new=True)
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True,
-                                                               generate_new=True)
-                else:
-                    instance.phone_number = _phone_number
-                    instance.phone_number_confirm_attempts = 0
-                    instance.save()
-
-                    instance.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=False,
-                                                               generate_new=True)
-        if 'email' in validated_data:
-            _email = validated_data.pop('email')
-            if _email == instance.email:
-                instance.email_candidate = ''
-                instance.email_confirm_pin = 0
-                instance.email_candidate_confirm_pin = 0
-                instance.email_confirm_attempts = 0
-                instance.save()
-            elif _email != (instance.email_candidate or instance.email):
-                if instance.is_email_confirmed:
-                    instance.email_candidate = _email
-                    instance.email_confirm_attempts = 0
-                    instance.save()
-                    instance.send_credential_confirmation_code(Credential.EMAIL, candidate=False, generate_new=True)
-                    instance.send_credential_confirmation_code(Credential.EMAIL, candidate=True, generate_new=True)
-                else:
-                    instance.email = _email
-                    instance.email_confirm_attempts = 0
-                    instance.save()
-                    instance.send_credential_confirmation_code(Credential.EMAIL, generate_new=True)
+        info = model_meta.get_field_info(user)
+        if (phone_number := validated_data.pop('phone_number', None)) is not None:
+            self._update_credential(user, Credential.PHONE_NUMBER, phone_number)
+        if (email := validated_data.pop('email', None)) is not None:
+            self._update_credential(user, Credential.EMAIL, email)
         for attr, value in validated_data.items():
             if attr in info.relations and info.relations[attr].to_many:
-                field = getattr(instance, attr)
+                field = getattr(user, attr)
                 field.set(value)
             else:
-                setattr(instance, attr, value)
-        instance.save()
-        return instance
+                setattr(user, attr, value)
+        user.save()
+        self.instance = user
+        return user
 
     class Meta:
         model = CustomUser
@@ -169,23 +229,22 @@ class PrivateCustomUserSerializer(serializers.ModelSerializer):
 
 def site_with_domain_exists(value):
     if not Site.objects.filter(domain=value).exists():
-        raise serializers.ValidationError(errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
-
-
-def validate_phone_number_with_provided_validator(value):
-    if not Site.objects.filter(domain=value).exists():
-        raise serializers.ValidationError(errors.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+        raise CustomAPIException(
+            {
+                'domain': [
+                    KwargsError(
+                        kwargs={'domain': value},
+                        code=error_codes.SITE_WITH_DOMAIN_DOES_NOT_EXIST)
+                ]
+            }
+        )
 
 
 class CustomUserCreateSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(validators=[moses_settings.PHONE_NUMBER_VALIDATOR])
-    email = serializers.CharField(validators=[EmailValidator])
+    email = CustomEmailField(required=False)
     domain = serializers.CharField(validators=[site_with_domain_exists], write_only=True)
-    password = serializers.CharField(
-        style={'input_type': 'password'},
-        write_only=True,
-        validators=[validate_password]
-    )
+    password = CustomPasswordField(required=True)
     default_error_messages = {
         'cannot_create_user': constants.Messages.CANNOT_CREATE_USER_ERROR,
     }
@@ -207,12 +266,39 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
                 site__domain=attrs['domain'],
                 email=attrs['email']
         ).exists():
-            raise serializers.ValidationError(errors.EMAIL_ALREADY_REGISTERED_ON_DOMAIN)
+            raise CustomAPIException(
+                {
+                    'email': [
+                        KwargsError(
+                            kwargs={'email': attrs.get('email')},
+                            code=error_codes.EMAIL_ALREADY_REGISTERED_ON_DOMAIN)
+                    ]
+                }
+            )
         if 'phone_number' not in attrs or CustomUser.objects.filter(
                 site__domain=attrs['domain'],
                 phone_number=attrs['phone_number']
         ).exists():
-            raise serializers.ValidationError(errors.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
+            raise CustomAPIException(
+                {
+                    'phone_number': [
+                        KwargsError(
+                            kwargs={'phone_number': attrs.get('phone_number')},
+                            code=error_codes.PHONE_NUMBER_ALREADY_REGISTERED_ON_DOMAIN)
+                    ]
+                }
+            )
+        elif not moses_settings.PHONE_NUMBER_VALIDATOR(attrs['phone_number']):
+            raise CustomAPIException(
+                {
+                    'phone_number': [
+                        KwargsError(
+                            kwargs={'phone_number': attrs.get('phone_number')},
+                            code=error_codes.INVALID_PHONE_NUMBER)
+                    ]
+                }
+            )
+
         attrs['site'] = Site.objects.get(domain=attrs.pop('domain'))
         user_attrs = {k: v for k, v in attrs.items() if k != 'inviter_id'}
         user = CustomUser(**user_attrs)
@@ -227,7 +313,9 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
 
     def perform_create(self, validated_data):
         with transaction.atomic():
-            user = CustomUser.objects.create_user(preferred_language=moses_settings.DEFAULT_LANGUAGE, **validated_data)
+            if 'preferred_language' not in validated_data:
+                validated_data['preferred_language'] = moses_settings.DEFAULT_LANGUAGE
+            user = CustomUser.objects.create_user(**validated_data)
         return user
 
 
@@ -256,9 +344,25 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
         self.user = authenticate(**authenticate_kwargs)
 
         if self.user is None or not self.user.is_active:
-            raise exceptions.AuthenticationFailed(
-                self.error_messages['no_active_account'],
-                'no_active_account',
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(
+                            kwargs={},
+                            code=error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                    ]
+                },
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if moses_settings.REQUIRE_PHONE_NUMBER_CONFIRMATION_FOR_LOGIN and not self.user.is_phone_number_confirmed:
+            raise CustomAPIException(
+                {
+                    '': [
+                        KwargsError(kwargs={}, code=error_codes.PHONE_NUMBER_NOT_CONFIRMED)
+                    ]
+                },
+                status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
         data = {}
@@ -271,17 +375,23 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
 
 
 class PasswordSerializer(serializers.Serializer):
-    new_password = serializers.CharField(style={"input_type": "password"})
+    new_password = CustomPasswordField(field_name='new_password', required=True)
 
     def validate(self, attrs):
+        # Password validation is now handled by CustomPasswordField
+        # But we still need to validate against user attributes
         user = getattr(self, "user", None) or self.context["request"].user
-        # why assert? There are ValidationError / fail everywhere
         assert user is not None
 
+        # The PasswordValidator in CustomPasswordField will handle this
+        # but we need to pass the user context, which we can do by re-validating
         try:
-            validate_password(attrs["new_password"], user)
-        except django_exceptions.ValidationError as e:
-            raise serializers.ValidationError({"new_password": list(e.messages)})
+            password_validator = PasswordValidator(field_name='new_password')
+            password_validator(attrs["new_password"], user)
+        except CustomAPIException:
+            # Re-raise the CustomAPIException as-is
+            raise
+
         return super().validate(attrs)
 
 
@@ -291,41 +401,83 @@ class ResetPasswordSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         validated_data = super().validate(attrs)
-        try:
-            self.user = CustomUser.objects.get(
-                Q(phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(email=validated_data['credential'], is_email_confirmed=True),
+        if moses_settings.CAN_RESET_PASSWORD_WITHOUT_PHONE_NUMBER_CONFIRMATION:
+            credential_q = Q(phone_number=validated_data['credential']) | Q(
+                email=validated_data['credential'])
+        else:
+            credential_q = Q(
+                phone_number=validated_data['credential'], is_phone_number_confirmed=True) | Q(
+                email=validated_data['credential'], is_email_confirmed=True)
+        if (user := CustomUser.objects.filter(
+                credential_q,
                 site__domain=validated_data['domain'],
+        ).first()) is None:
+            raise CustomAPIException(
+                {
+                    'credential': [
+                        KwargsError(
+                            kwargs={'credential': attrs.get('credential')},
+                            code=error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                    ]
+                }
             )
-            if self.user.is_sms_timeout(SMSType.PASSWORD_RESET):
-                raise ValidationError(
-                    {"credential": [errors.TOO_FREQUENT_SMS_REQUESTS]}, code=errors.TOO_FREQUENT_SMS_REQUESTS
-                )
-        except (CustomUser.DoesNotExist, ValueError, TypeError, OverflowError):
-            key_error = "code_not_found"
-            raise ValidationError(
-                {"credential": [errors.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN]}, code=key_error
-            )
+        else:
+            self.user = user
         return validated_data
+
+
+class GoogleSignInSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
+class GoogleCompleteRegistrationSerializer(serializers.Serializer):
+    google_auth_token = serializers.CharField(required=True)
+    phone_number = serializers.CharField(
+        validators=[moses_settings.PHONE_NUMBER_VALIDATOR],
+        required=True
+    )
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
+class TelegramSignInSerializer(serializers.Serializer):
+    auth_data = serializers.DictField(required=True)
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
+
+
+class TelegramCompleteRegistrationSerializer(serializers.Serializer):
+    telegram_auth_token = serializers.CharField(required=True)
+    phone_number = serializers.CharField(
+        validators=[moses_settings.PHONE_NUMBER_VALIDATOR],
+        required=True
+    )
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    domain = serializers.CharField(validators=[site_with_domain_exists], required=True)
 
 
 class ConfirmResetPasswordSerializer(PasswordSerializer):
     credential = serializers.CharField()
     domain = serializers.CharField()
-    code = serializers.CharField()
+    code = serializers.IntegerField()
 
     def validate(self, attrs):
         validated_data = super().validate(attrs)
-        try:
-            self.user = CustomUser.objects.get(
+        if (user := CustomUser.objects.filter(
                 Q(phone_number=validated_data['credential']) | Q(email=validated_data['credential']),
                 site__domain=validated_data['domain'],
-                password_reset_code=validated_data['code'],
-                password_reset_code_sms_sent_at__gte=timezone.now() - timedelta(
-                    minutes=moses_settings.PASSWORD_RESET_TIMEOUT_MINUTES)
+        ).first()) is not None:
+            # Burns the code: a successful validate is the code's only use.
+            user = use_password_reset_code(
+                user, validated_data['code'], by_phone=validated_data['credential'] == user.phone_number)
+        else:
+            raise CustomAPIException(
+                {
+                    'code': [
+                        KwargsError(
+                            kwargs={},
+                            code=error_codes.INVALID_CONFIRMATION_CODE)
+                    ]
+                }
             )
-        except (CustomUser.DoesNotExist, ValueError, TypeError, OverflowError):
-            key_error = "code_not_found"
-            raise ValidationError(
-                {"phone_number": ['code_not_found']}, code=key_error
-            )
+        self.user = user
         return validated_data

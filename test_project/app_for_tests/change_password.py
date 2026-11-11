@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from moses import errors
+from moses.common import error_codes
 from moses.models import CustomUser
 from test_project.app_for_tests import APIClient
 
@@ -25,8 +25,7 @@ class ChangePasswordTestCase(TestCase):
             'abcxyz345'
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data['current_password'], [errors.INVALID_PASSWORD])
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data['errors']['current_password'][0]['error_code'], error_codes.INVALID_PASSWORD)
         user, response = test_client.update_password(
             self.user1,
             'abcxyz123',

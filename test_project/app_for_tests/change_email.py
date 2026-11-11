@@ -6,7 +6,7 @@ from test_project.app_for_tests import APIClient
 test_client = APIClient('')
 
 
-class LoginTestCase(TestCase):
+class ChangeEmailTestCase(TestCase):
     fixtures = ['change_email']
 
     def setUp(self):

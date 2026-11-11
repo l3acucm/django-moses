@@ -1,16 +1,11 @@
-import base64
-import random
-import string
-
 import pyotp
-from django.contrib.auth import get_user_model
+from django.conf import settings as django_settings
+from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db.models import Q
-from django.utils import translation
 from django.utils.timezone import now
-from django.utils.translation import gettext as _
 from djoser import signals, utils
 from djoser.compat import get_user_email
 from djoser.conf import settings as djoser_settings
@@ -18,13 +13,21 @@ from djoser.utils import logout_user
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from moses import errors
-from moses.conf import settings as moses_settings
+from moses.common import error_codes
+from moses.common.exceptions import KwargsError, CustomAPIException
+from moses.conf import settings as moses_settings, login_methods, WITH_PASSWORD, WITHOUT_PASSWORD
 from moses.decorators import otp_required
-from moses.models import CustomUser, Credential
-from moses.serializers import ShortCustomUserSerializer
+from moses.enums import Credential
+from moses.models import CustomUser
+from moses.services.credentials_confirmation import try_to_confirm_credential, send_credential_confirmation_code
+from moses.services import otp_login
+from moses.services.anonymize import anonymize_user, superuser_error
+from moses.services.messages import render_message
+from moses.services.reset_password import send_password_reset_code
 
 User = get_user_model()
 
@@ -35,6 +38,17 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = djoser_settings.PERMISSIONS.user
     token_generator = default_token_generator
     lookup_field = djoser_settings.USER_ID_FIELD
+
+    def initial(self, request, *args, **kwargs):
+        methods = login_methods()
+        if WITH_PASSWORD not in methods and self.action in (
+                "create", "set_password", "reset_password", "reset_password_confirm"):
+            raise NotFound()
+        super().initial(request, *args, **kwargs)
+        # Endpoints that send a code share otp_request's per-IP limit
+        # (a profile update only when it sends one, see perform_update).
+        if self.action in ("create", "reset_password", "request_phone_number_confirmation_pin"):
+            otp_login.check_request_ip_limit(request)
 
     def permission_denied(self, request, **kwargs):
         if (
@@ -65,7 +79,7 @@ class UserViewSet(viewsets.ModelViewSet):
             self.permission_classes = djoser_settings.PERMISSIONS.password_reset_confirm
         elif self.action == "set_password":
             self.permission_classes = djoser_settings.PERMISSIONS.set_password
-        elif self.action in ("mfa_status", "credential_availability"):
+        elif self.action in ("mfa_status", "credential_availability", "sms_unlock_time", "otp_request", "otp_verify"):
             self.permission_classes = []
         elif self.action == "destroy" or (
                 self.action == "me" and self.request and self.request.method == "DELETE"
@@ -128,12 +142,15 @@ class UserViewSet(viewsets.ModelViewSet):
             djoser_settings.EMAIL.confirmation(self.request, context).send(to)
 
     def perform_update(self, serializer, *args, **kwargs):
+        phone_number = serializer.validated_data.get('phone_number')
+        if phone_number is not None and phone_number not in (
+                serializer.instance.phone_number, serializer.instance.phone_number_candidate):
+            otp_login.check_request_ip_limit(self.request)  # a new number gets a code
         super().perform_update(serializer, *args, **kwargs)
         user = serializer.instance
         signals.user_updated.send(
             sender=self.__class__, user=user, request=self.request
         )
-
         # should we send activation email after update?
         if djoser_settings.SEND_ACTIVATION_EMAIL and not user.is_active:
             context = {"user": user}
@@ -142,13 +159,29 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if instance.is_superuser:
+            raise superuser_error()
+        # Code-login users never had a password to confirm with.
+        if request.user.has_usable_password():
+            serializer = self.get_serializer(instance, data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        if instance == request.user:
-            utils.logout_user(self.request)
         self.perform_destroy(instance)
+        if instance == request.user:
+            self._logout(request)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        anonymize_user(instance)
+
+    @staticmethod
+    def _logout(request):
+        token_model = djoser_settings.TOKEN_MODEL
+        # JWT-only projects: authtoken isn't installed, so its Token is abstract (no manager).
+        if token_model is None or not token_model._meta.abstract:
+            utils.logout_user(request)
+        elif djoser_settings.CREATE_SESSION_ON_LOGIN:
+            logout(request)
 
     @action(["get", "put", "patch", "delete"], detail=False)
     def me(self, request, *args, **kwargs):
@@ -212,26 +245,30 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["get"], detail=False)
     def mfa_status(self, request):
-        u_qs = CustomUser.objects.filter(phone_number=request.GET.get('phone_number'), site__domain=request.GET.get('domain'))
+        u_qs = CustomUser.objects.filter(
+            phone_number=request.GET.get('phone_number'),
+            site__domain=request.GET.get('domain')
+        )
         result = u_qs.exists() and bool(u_qs.first().mfa_secret_key)
         return Response({'result': result}, status=status.HTTP_200_OK)
 
     @action(["post"], detail=False)
     def set_password(self, request, *args, **kwargs):
         if not request.user.check_password(request.data.get('current_password')):
-            return Response(
-                {'current_password': [errors.INVALID_PASSWORD]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise CustomAPIException({
+                'current_password': [
+                    KwargsError(error_codes.INVALID_PASSWORD)
+                ]
+            })
 
         self.request.user.set_password(request.data.get('new_password'))
         self.request.user.save()
-        with translation.override(self.request.user.preferred_language):
-            send_mail(_("Password changed"),
-                      _(
-                          "Your password has been changed. "
-                          f"If it happened without your desire - contact us by email support@{djoser_settings.DOMAIN}."),
-                      'noreply@' + djoser_settings.DOMAIN, [self.request.user.email])
+        if not moses_settings.EMAILS_DISABLED:
+            user = self.request.user
+            send_mail(
+                render_message('PASSWORD_CHANGED_TITLE', user),
+                render_message('PASSWORD_CHANGED_BODY', user),
+                'noreply@' + djoser_settings.DOMAIN, [user.email])
         if djoser_settings.LOGOUT_ON_PASSWORD_CHANGE:
             logout_user(self.request)
 
@@ -241,7 +278,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def reset_password(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.user.send_password_reset_code(serializer.data["credential"])
+        send_password_reset_code(serializer.user, serializer.data["credential"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(["post"], detail=False)
@@ -249,7 +286,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        serializer.user.set_password(serializer.data["new_password"])
+        serializer.user.set_password(serializer.validated_data["new_password"])
         if hasattr(serializer.user, "last_login"):
             serializer.user.last_login = now()
         serializer.user.save()
@@ -293,9 +330,15 @@ class UserViewSet(viewsets.ModelViewSet):
         phone_or_email = request.GET.get('value', None)
         user = CustomUser.objects.filter(Q(email=phone_or_email) | Q(phone_number=phone_or_email)).first()
         if user:
-            return Response(ShortCustomUserSerializer(user).data)
+            from moses.serializers import PublicCustomUserSerializer
+            serializer_class = moses_settings.SHORT_USER_SERIALIZER or PublicCustomUserSerializer
+            return Response(serializer_class(user, context=self.get_serializer_context()).data)
         else:
-            return Response({'non_field_errors': ['user_not_found']}, status=status.HTTP_404_NOT_FOUND)
+            raise CustomAPIException({
+                '': [
+                    KwargsError(error_codes.USER_WITH_PROVIDED_CREDENTIALS_DOES_NOT_REGISTERED_ON_SPECIFIED_DOMAIN)
+                ]
+            }, status_code=status.HTTP_404_NOT_FOUND)
 
     @action(["get"], detail=False)
     def get_user_roles(self, request):
@@ -304,8 +347,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(["get"], detail=False)
     def get_mfa_key(self, request):
-        mfa_secret_key = base64.b32encode(
-            bytes(''.join(random.choice(string.ascii_letters) for _ in range(100)).encode('utf-8'))).decode('utf-8')
+        mfa_secret_key = pyotp.random_base32()
         return Response(
             {
                 'mfa_secret_key': mfa_secret_key,
@@ -322,7 +364,9 @@ class UserViewSet(viewsets.ModelViewSet):
     def enable_mfa(self, request):
         mfa_secret_key = request.data.get('mfa_secret_key')
         otp = request.headers.get('otp', '')
-        if pyotp.totp.TOTP(mfa_secret_key.encode('utf-8')).verify(otp):
+        otp_valid = (django_settings.DEBUG and otp == '000000') or \
+                    pyotp.totp.TOTP(mfa_secret_key.encode('utf-8')).verify(otp)
+        if otp_valid:
             request.user.mfa_secret_key = mfa_secret_key
             request.user.save()
             return Response(
@@ -330,12 +374,11 @@ class UserViewSet(viewsets.ModelViewSet):
                     'success': 'mfa has been successfully disabled'
                 }
             )
-        return Response(
-            {
-                'non_field_errors': ['invalid_otp']
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        raise CustomAPIException({
+            'otp': [
+                KwargsError(error_codes.INVALID_OTP)
+            ]
+        })
 
     @otp_required
     @action(["post"], detail=False)
@@ -349,13 +392,91 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
     @action(["post"], detail=False)
+    def otp_request(self, request):
+        if WITHOUT_PASSWORD not in login_methods():
+            raise NotFound()
+        otp_login.check_request_ip_limit(request)
+        otp_login.request_login_code(
+            otp_login.text_field(request, 'phone_number'), otp_login.text_field(request, 'domain'))
+        return Response({})
+
+    @action(["post"], detail=False)
+    def otp_verify(self, request):
+        if WITHOUT_PASSWORD not in login_methods():
+            raise NotFound()
+        # Refused before touching the user, so a guessing IP can't burn anyone's attempts.
+        otp_login.check_verify_ip_limit(request)
+        try:
+            user = CustomUser.objects.filter(
+                site__domain=otp_login.text_field(request, 'domain'),
+                phone_number=otp_login.text_field(request, 'phone_number'),
+            ).first()
+            # Unknown and inactive users look exactly like a wrong code.
+            if user is None or not user.is_active:
+                raise otp_login.wrong_code_error()
+            result = otp_login.verify_login_code(
+                user, otp_login.text_field(request, 'code'), otp_login.text_field(request, 'otp'))
+            if result is None:
+                raise otp_login.wrong_code_error()
+        except CustomAPIException:
+            otp_login.count_failed_verify(request)
+            raise
+        # The verify may have changed the password hash (first proof); simplejwt's
+        # CHECK_REVOKE_TOKEN embeds it, so mint from the saved row, not the stale copy.
+        user.refresh_from_db()
+        refresh = RefreshToken.for_user(user)
+        return Response({'access': str(refresh.access_token), 'refresh': str(refresh), **result})
+
+    @action(["get"], detail=False)
+    def sms_unlock_time(self, request):
+        if (sms_type := request.query_params.get('sms_type')) not in (
+                'password_reset',
+                'phone_number_confirmation'
+        ):
+            raise CustomAPIException({
+                '': [
+                    KwargsError(error_codes.INVALID_SMS_TYPE)
+                ]
+            }, status_code=status.HTTP_404_NOT_FOUND)
+        if candidate := ('candidate' in request.query_params):
+            user = get_object_or_404(
+                CustomUser,
+                phone_number_candidate=request.query_params.get('phone_number'),
+                site__domain=request.query_params.get('domain')
+            )
+        else:
+            user = get_object_or_404(
+                CustomUser,
+                phone_number=request.query_params.get('phone_number'),
+                site__domain=request.query_params.get('domain')
+            )
+        if sms_type == 'password_reset':
+            sms_unlocks_at = user.password_reset_code_sms_unlocks_at
+        else:
+            if candidate:
+                sms_unlocks_at = user.phone_number_candidate_confirmation_code_sms_unlocks_at
+            else:
+                sms_unlocks_at = user.phone_number_confirmation_code_sms_unlocks_at
+
+        return Response({
+            'unlocks_at': sms_unlocks_at
+        })
+
+    @action(["post"], detail=False)
     def request_phone_number_confirmation_pin(self, request):
-        if request.user.last_phone_number_confirmation_pins_sent is None or (
-                now() - request.user.last_phone_number_confirmation_pins_sent).seconds >= 60 * moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_MINUTES_PERIOD:
-            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER)
-            request.user.send_credential_confirmation_code(Credential.PHONE_NUMBER, candidate=True)
-            return Response({})
-        return Response({'non_field_errors': ['too_frequent_sms_request']}, status=status.HTTP_400_BAD_REQUEST)
+        # Resend the same code (an earlier, delayed message stays valid) —
+        # unless it was wiped to 0, e.g. by saving the profile with an
+        # unchanged number (sending "0" would leave the user stuck), or is
+        # past PHONE_OTP_CODE_TTL_SECONDS (otp_verify would refuse it).
+        user = request.user
+        send_credential_confirmation_code(
+            user, Credential.PHONE_NUMBER,
+            generate_new=not user.phone_number_confirmation_pin or otp_login.login_code_expired(user))
+        if user.phone_number_candidate:
+            send_credential_confirmation_code(
+                user, Credential.PHONE_NUMBER, candidate=True,
+                generate_new=not user.phone_number_candidate_confirmation_pin)
+        return Response({})
 
     @action(["post"], detail=False)
     def request_email_confirmation_pin(self, request):
@@ -366,45 +487,43 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(["post"], detail=False)
     def confirm_email(self, request):
         candidate_email = request.user.email_candidate
-        confirmation_result = request.user.try_to_confirm_credential(
+        confirmation_result = try_to_confirm_credential(
+            request.user,
             Credential.EMAIL,
             request.data.get('pin', ''),
             request.data.get('candidate_pin', '')
         )
         if False not in confirmation_result:
             if candidate_email:
-                with translation.override(request.user.preferred_language):
-                    send_mail(
-                        _("Email changed"),
-                        _(f"Your email has been changed. If it happened without your desire - "
-                          f"contact us by email support@{moses_settings.DOMAIN}."),
-                        'noreply@' + moses_settings.DOMAIN, [candidate_email]
-                    )
+                send_mail(
+                    render_message('EMAIL_CHANGED_TITLE', request.user),
+                    render_message('EMAIL_CHANGED_BODY', request.user),
+                    'noreply@' + moses_settings.DOMAIN, [candidate_email]
+                )
             return Response({'result': 'ok'})
         result = {}
         if confirmation_result[0] == False:
-            result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
+            result['pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
         if confirmation_result[1] == False:
-            result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-        return Response(result, status.HTTP_400_BAD_REQUEST)
+            result['candidate_pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+        raise CustomAPIException(result)
 
     @action(["post"], detail=False)
     def confirm_phone_number(self, request):
         candidate_phone_number = request.user.phone_number_candidate
-        confirmation_result = request.user.try_to_confirm_credential(
+        confirmation_result = try_to_confirm_credential(
+            request.user,
             Credential.PHONE_NUMBER,
             request.data.get('pin', ''),
             request.data.get('candidate_pin', '')
         )
         if False not in confirmation_result:
-            if candidate_phone_number:
-                with translation.override(request.user.preferred_language):
-                    send_mail(
-                        _("Phone number changed"),
-                        _(f"Your phone number has been changed. If it happened without your desire - "
-                          f"contact us by email support@{moses_settings.DOMAIN}."),
-                        'noreply@' + moses_settings.DOMAIN, [request.user.email]
-                    )
+            if candidate_phone_number and not moses_settings.EMAILS_DISABLED:
+                send_mail(
+                    render_message('PHONE_NUMBER_CHANGED_TITLE', request.user),
+                    render_message('PHONE_NUMBER_CHANGED_BODY', request.user),
+                    'noreply@' + moses_settings.DOMAIN, [request.user.email]
+                )
             return Response(
                 {
                     'success': True
@@ -412,8 +531,8 @@ class UserViewSet(viewsets.ModelViewSet):
             )
         else:
             result = dict()
-            if not confirmation_result[0]:
-                result['pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-            if not confirmation_result[1] and confirmation_result[1] is not None:
-                result['candidate_pin'] = [errors.INCORRECT_CONFIRMATION_PIN]
-            return Response(result, status=400)
+            if confirmation_result[0] == False:
+                result['pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+            if confirmation_result[1] == False:
+                result['candidate_pin'] = [KwargsError(code=error_codes.INCORRECT_CONFIRMATION_PIN)]
+            raise CustomAPIException(result)

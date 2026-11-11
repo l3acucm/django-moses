@@ -1,0 +1,184 @@
+import secrets
+from datetime import timedelta
+
+from django.conf import settings as django_settings
+from django.core.mail import send_mail
+from django.db import transaction
+from django.utils import timezone
+from django.utils.timezone import now
+
+from moses.common import error_codes
+from moses.common.exceptions import CustomAPIException, KwargsError
+from moses.conf import settings as moses_settings
+from moses.enums import Credential, SMSType
+from moses.models import CustomUser
+from moses.services.anonymize import anonymize_user
+from moses.services.messages import render_message
+from moses.services.sms import sms_unlock_time
+from moses.signals import phone_number_confirmed, email_confirmed
+
+
+def free_number_from_unconfirmed_holder(user, phone_number: str) -> None:
+    """Anonymizes another user on the site holding phone_number if they never confirmed it.
+
+    The confirmed candidate pin proves the number is this user's; a holder who
+    never proved it (e.g. typed into otp_request and never verified) gives it
+    up. Confirmed holders, staff and superusers are left alone. The row lock
+    (the filter is re-checked after the wait) keeps a holder who confirms at
+    the same moment from being anonymized. Call inside a transaction.
+    """
+    holder = CustomUser.objects.select_for_update().filter(
+        site_id=user.site_id, phone_number=phone_number,
+        is_phone_number_confirmed=False, is_staff=False, is_superuser=False,
+    ).exclude(pk=user.pk).first()
+    if holder is not None:
+        anonymize_user(holder)
+
+
+def try_to_confirm_credential(user, credential: Credential, main_pin_str: str, candidate_pin_str: str):
+    match credential:
+        case Credential.PHONE_NUMBER:
+            attempts_field = 'phone_number_confirmation_attempts'
+            current_credential_field = 'phone_number'
+            candidate_credential_field = 'phone_number_candidate'
+            current_credential_confirmation_field = 'is_phone_number_confirmed'
+            max_attempts_limit = moses_settings.PHONE_NUMBER_CONFIRMATION_ATTEMPTS_LIMIT
+            current_pin_field = 'phone_number_confirmation_pin'
+            candidate_pin_field = 'phone_number_candidate_confirmation_pin'
+        case Credential.EMAIL:
+            attempts_field = 'email_confirmation_attempts'
+            current_credential_field = 'email'
+            candidate_credential_field = 'email_candidate'
+            current_credential_confirmation_field = 'is_email_confirmed'
+            max_attempts_limit = moses_settings.EMAIL_CONFIRMATION_ATTEMPTS_LIMIT
+            current_pin_field = 'email_confirmation_pin'
+            candidate_pin_field = 'email_candidate_confirmation_pin'
+        case _:
+            raise ValueError(error_codes.INVALID_CREDENTIAL)
+    if getattr(user, attempts_field) >= max_attempts_limit:
+        raise CustomAPIException(
+            {
+                '': [
+                    KwargsError(
+                        code=error_codes.ATTEMPTS_LIMIT_REACHED)
+                ]
+            }
+        )
+    received_pin, received_candidate_pin = int(main_pin_str or '0'), int(candidate_pin_str or '0')
+    # A stored 0 means "no main code needed" — only valid while a candidate
+    # is being confirmed (its pin proves ownership). Without a candidate it
+    # is a wiped code, and an empty pin (parsed to 0) must not match it.
+    has_candidate = bool(getattr(user, candidate_credential_field))
+    stored_pin = getattr(user, current_pin_field)
+    is_main_pin_correct = received_pin == stored_pin and (stored_pin != 0 or has_candidate) or (django_settings.DEBUG and received_pin == 123456)
+    is_candidate_pin_correct = None
+    if getattr(user, candidate_credential_field):
+        stored_candidate_pin = getattr(user, candidate_pin_field)
+        is_candidate_pin_correct = (received_candidate_pin == stored_candidate_pin and stored_candidate_pin != 0) or (django_settings.DEBUG and received_candidate_pin == 123456)
+    if is_main_pin_correct and (is_candidate_pin_correct is None or is_candidate_pin_correct):
+        setattr(user, current_pin_field, 0)
+        setattr(user, candidate_pin_field, 0)
+        setattr(user, current_credential_confirmation_field, True)
+        setattr(user, attempts_field, 0)
+
+        # Check if this is an update (had candidate) or initial confirmation
+        had_candidate = bool(getattr(user, candidate_credential_field))
+
+        with transaction.atomic():
+            if candidate := getattr(user, candidate_credential_field):
+                if credential == Credential.PHONE_NUMBER:
+                    free_number_from_unconfirmed_holder(user, candidate)
+                setattr(user, current_credential_field, candidate)
+                setattr(user, candidate_credential_field, '')
+            user.save()
+
+        # Emit signal after successful confirmation
+        confirmed_value = getattr(user, current_credential_field)
+        is_initial_confirmation = not had_candidate
+
+        if credential == Credential.PHONE_NUMBER:
+            phone_number_confirmed.send(
+                sender=user.__class__,
+                user=user,
+                phone_number=confirmed_value,
+                is_initial_confirmation=is_initial_confirmation
+            )
+        elif credential == Credential.EMAIL:
+            email_confirmed.send(
+                sender=user.__class__,
+                user=user,
+                email=confirmed_value,
+                is_initial_confirmation=is_initial_confirmation
+            )
+    else:
+        setattr(user, attempts_field, getattr(user, attempts_field) + 1)
+        user.save()
+    return is_main_pin_correct, is_candidate_pin_correct
+
+
+def send_credential_confirmation_code(
+        user,
+        credential_type:
+        Credential,
+        candidate=False,
+        generate_new=False,
+        ignore_frequency_limit=False
+):
+    match credential_type:
+        case Credential.PHONE_NUMBER:
+            attempts_field = 'phone_number_confirmation_attempts'
+            if candidate:
+                unlock_time_field = 'phone_number_candidate_confirmation_code_sms_unlocks_at'
+                credential_field = 'phone_number_candidate'
+                pin_field = 'phone_number_candidate_confirmation_pin'
+            else:
+                unlock_time_field = 'phone_number_confirmation_code_sms_unlocks_at'
+                credential_field = 'phone_number'
+                pin_field = 'phone_number_confirmation_pin'
+            if (
+                    (
+                            sut := sms_unlock_time(
+                                user,
+                                SMSType.PHONE_NUMBER_CONFIRMATION,
+                                candidate=candidate)
+                    ) is None or sut <= timezone.now() or ignore_frequency_limit
+            ):
+                new_unlock_time = now() + timedelta(seconds=moses_settings.PHONE_NUMBER_CONFIRMATION_SMS_SECONDS_PERIOD)
+                setattr(user, unlock_time_field, new_unlock_time)
+            else:
+                raise CustomAPIException(
+                    {
+                        '': [
+                            KwargsError(code=error_codes.TOO_FREQUENT_SMS_REQUESTS)
+                        ]
+                    }
+                )
+        case Credential.EMAIL:
+            attempts_field = 'email_confirmation_attempts'
+            if candidate:
+                credential_field = 'email_candidate'
+                pin_field = 'email_candidate_confirmation_pin'
+            else:
+                credential_field = 'email'
+                pin_field = 'email_confirmation_pin'
+        case _:
+            raise ValueError(error_codes.INVALID_CREDENTIAL_TYPE)
+
+    if generate_new:
+        setattr(user, pin_field, 100000 + secrets.randbelow(900000))
+        if pin_field == 'phone_number_confirmation_pin':
+            user.phone_number_confirmation_pin_created_at = now()
+    # Every sent code gets a fresh set of attempts; otherwise a user who
+    # mistyped it a few times is locked out for good.
+    setattr(user, attempts_field, 0)
+    user.save()
+    pin = getattr(user, pin_field)
+    recipient = getattr(user, credential_field)
+    match credential_type:
+        case Credential.PHONE_NUMBER:
+            body = render_message('PHONE_NUMBER_CONFIRMATION_PIN_BODY', user, pin=pin)
+            moses_settings.SEND_SMS_HANDLER(recipient, body)
+        case Credential.EMAIL:
+            title = render_message('EMAIL_CONFIRMATION_PIN_TITLE', user, pin=pin)
+            body = render_message('EMAIL_CONFIRMATION_PIN_BODY', user, pin=pin)
+            send_mail(title, body, moses_settings.SENDER_EMAIL, [recipient])
