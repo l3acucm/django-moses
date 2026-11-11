@@ -23,6 +23,7 @@ factory_boy = "^3.2.1"
 
 [tool.poetry.group.dev.dependencies]
 psycopg = "^3.1.8"
+setuptools = "<81"
 
 [tool.setuptools]
 packages = ['moses', 'moses.migrations', 'moses.views']
