@@ -25,6 +25,7 @@ pytest-django = "^4.5.2"
 pytest-cov = "^4.0.0"
 factory-boy = "^3.2.1"
 psycopg = "^3.1.8"
+setuptools = "<81"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
